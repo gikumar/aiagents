@@ -33,3 +33,4 @@ env.bak/
 
 backend/app/config.pyfrontend_backup/
 frontend_backup/
+.env
