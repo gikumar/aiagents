@@ -35,3 +35,4 @@ backend/app/config.py
 frontend_backup/
 frontend_backup/
 .env
+repo-backup.git/
