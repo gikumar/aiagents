@@ -1,12 +1,31 @@
-# Frontend node modules
+# Frontend Node.js dependencies and builds
 frontend/node_modules/
 frontend/build/
+frontend/.env
 
-# Python cache and env
+# Backend Python cache, environments, and compiled files
 backend/__pycache__/
 backend/.venv/
+backend/env/
 *.pyc
+*.pyo
+*.pyd
+*.py[cod]
+*.so
+
+# General Python env files
 .env
+venv/
+ENV/
+env.bak/
+*.egg-info/
 
 # macOS system files
 .DS_Store
+
+# VSCode and IDE configs (optional but useful)
+.vscode/
+.idea/
+
+# Log files
+*.log
