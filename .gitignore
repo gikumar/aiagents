@@ -31,4 +31,4 @@ env.bak/
 *.log
 
 
-backend/app/config.py
+backend/app/config.pyfrontend_backup/
