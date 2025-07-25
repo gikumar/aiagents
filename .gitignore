@@ -29,3 +29,6 @@ env.bak/
 
 # Log files
 *.log
+
+
+backend/app/config.py
