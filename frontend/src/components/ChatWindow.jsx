@@ -105,6 +105,7 @@ const ChatWindow = () => {
     }
   };
 
+  // for graph generation request handling
   const handleGraphRequest = async (graphType) => {
     if (loading) return;
     
@@ -194,6 +195,7 @@ const ChatWindow = () => {
     setIsSidebarHidden(prev => !prev);
   };
 
+// Handle submit request  
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!prompt.trim() && (!uploadedFile || !uploadedFile.content)) return;
@@ -217,6 +219,7 @@ const ChatWindow = () => {
         is_graph_request: prompt.toLowerCase().includes('graph')
       };
 
+      //calling the ask_agent function in main.py
       const res = await axios.post("http://localhost:8000/ask", payload);
 
       const agentResponse = {
@@ -228,7 +231,7 @@ const ChatWindow = () => {
         })
       };
       setMessages(prev => [...prev, agentResponse]);
-      
+      console.log("thread id= ", res.data.thread_id)
       if (res.data.thread_id) setCurrentThreadId(res.data.thread_id);
       if (res.data.input_tokens !== undefined) setInputTokens(res.data.input_tokens);
       if (res.data.output_tokens !== undefined) setOutputTokens(res.data.output_tokens);

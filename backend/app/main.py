@@ -87,7 +87,7 @@ async def ask_agent(request: AskRequest):
             ]
 
         # Process request using AgentFactory
-        response = agent_factory.process_request(
+        response = agent_factory.process_request2(
             prompt=request.prompt,
             agent_mode=request.agentMode,
             file_content=request.file_content,
