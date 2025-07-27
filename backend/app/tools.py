@@ -2,6 +2,7 @@
 
 ###labs
 import json
+import time
 from pathlib import Path
 import uuid
 from typing import Any, Callable, Set
@@ -34,70 +35,131 @@ def submit_support_ticket(email_address: str, description: str) -> str:
 #      return json.dumps(result)
 
 # Function to get data from databricks
-def get_deals_data() -> dict:
+def get_deals_data(query: str = None) -> dict:
     """
     Fetch deals data from databricks delta table.
     Converts datetime columns and NaNs for JSON serialization.
-    :param query: the query to execute on databricks.
-    :return: dict: {'columns': list, 'data': list of records}
+    
+    Args:
+        query: Optional custom query to execute. If None, uses default query from config.
+        
+    Returns:
+        dict: {'columns': list, 'data': list of records} or {'error': str} on failure
     """
     try:
-        df = read_data_from_delta(config.query)
-
-        # Convert NaN to None for JSON serialization
-        df = df.replace({np.nan: None})
-
-        # Convert datetime columns to ISO string
-        for col in df.select_dtypes(include=['datetime64[ns]', 'datetime64[ns, UTC]']).columns:
-            df[col] = df[col].astype(str)
+        # Use custom query if provided, otherwise fall back to config.query
+        query_to_execute = query if query is not None else config.query
+        
+        if not query_to_execute or not query_to_execute.strip():
+            raise ValueError("No query provided to execute")
+            
+        df = read_data_from_delta(query_to_execute)
+        
+        if df.empty:
+            return {
+                "columns": [],
+                "data": [],
+                "warning": "Query returned no results"
+            }
+                
+        # Data cleaning and preparation
+        df = (
+            df
+            # Convert NaN/NaT to None for JSON serialization
+            .replace({np.nan: None, pd.NaT: None})
+            # Convert datetime columns to ISO strings
+            .pipe(lambda df: df.assign(**{
+                col: df[col].astype(str)
+                for col in df.select_dtypes(include=['datetime64[ns]', 'datetime64[ns, UTC]']).columns
+            }))
+        )
 
         return {
             "columns": df.columns.tolist(),
-            "data": df.to_dict('records')
+            "data": df.to_dict('records'),
+            "query_used": query_to_execute  # For debugging/tracking
         }
 
     except Exception as e:
-        print(f"Error in get_deals_data: {str(e)}")
-        return {"error": str(e)}
+        error_msg = f"Error in get_deals_data: {str(e)}"
+        print(error_msg)
+        return {
+            "error": error_msg,
+            "query_attempted": query if query is not None else config.query
+        }
 
    
 
 # Get data from databricks delta tables
 def read_data_from_delta(query: str) -> pd.DataFrame:
     """
-    Read data from Delta table with proper resource handling
+    Read data from Delta table with proper resource handling and error management
+    
+    Args:
+        query: SQL query to execute
+        
+    Returns:
+        pd.DataFrame: Resultset as a DataFrame
+        
+    Raises:
+        ValueError: If query is empty or connection fails
+        RuntimeError: If query execution fails
     """
+    if not query or not query.strip():
+        raise ValueError("Query cannot be empty")
+    
     conn = None
     try:
         conn = get_db_connection()
         if not conn:
             raise ConnectionError("Failed to establish database connection")
             
-        cursor = conn.cursor()
-        cursor.execute(query)
-        columns = [desc[0] for desc in cursor.description]
-        data = cursor.fetchall()
-        return pd.DataFrame(data, columns=columns)
+        with conn.cursor() as cursor:
+            cursor.execute(query)
+            
+            # Get column names from cursor description
+            columns = [desc[0] for desc in cursor.description]
+            data = cursor.fetchall()
+            
+            if not data:
+                return pd.DataFrame(columns=columns)
+                
+            return pd.DataFrame(data, columns=columns)
+            
+    except Exception as e:
+        error_msg = f"Error executing query: {str(e)}"
+        print(error_msg)
+        raise RuntimeError(error_msg)
         
     finally:
         if conn:
-            conn.close()
-            
+            try:
+                conn.close()
+            except Exception as e:
+                print(f"Warning: Error closing connection: {str(e)}")
+           
 
 #--- Database Connection Handling ---
 def get_db_connection():
-    """Create and return a database connection with error handling"""
-    try:
-        return sql.connect(
-            server_hostname=config.DATABRICKS_SERVER_HOSTNAME,
-            http_path=config.DATABRICKS_HTTP_PATH,
-            access_token=config.DATABRICKS_ACCESS_TOKEN,
-            _verify_ssl=False
-        )
-    except Exception as e:
-        print(f"Database connection failed: {str(e)}")
-        return None
-
+    """Create and return a database connection with enhanced error handling"""
+    max_retries = 3
+    retry_delay = 1  # seconds
+    
+    for attempt in range(max_retries):
+        try:
+            return sql.connect(
+                server_hostname=config.DATABRICKS_SERVER_HOSTNAME,
+                http_path=config.DATABRICKS_HTTP_PATH,
+                access_token=config.DATABRICKS_ACCESS_TOKEN,
+                _verify_ssl=False,
+                timeout=30  # Added connection timeout
+            )
+        except Exception as e:
+            if attempt == max_retries - 1:
+                raise ConnectionError(f"Database connection failed after {max_retries} attempts: {str(e)}")
+            time.sleep(retry_delay * (attempt + 1))
+    
+    raise ConnectionError("Unexpected error in get_db_connection")
 from typing import Dict, Any
 
 # def generate_graph_data(prompt: str) -> Dict[str, Any]:
@@ -124,83 +186,189 @@ from typing import Dict, Any
 #     else:
 #         raise ValueError("Unable to generate graph data from prompt")
 
+def get_deals_data(query: str = None) -> dict:
+    """
+    Fetches deals data using the pre-aggregated graph query from config
+    """
+    try:
+        # Use the graph query from config by default
+        query_to_execute = query if query else config.graphquery
+        
+        if not query_to_execute or not query_to_execute.strip():
+            raise ValueError("No query provided to execute")
+            
+        df = read_data_from_delta(query_to_execute)
+        
+        if df.empty:
+            return {"columns": [], "data": [], "warning": "Query returned no results"}
+            
+        # Convert numeric columns and handle NULLs
+        numeric_cols = [
+            'total_realized_pnl', 'total_unrealized_pnl', 
+            'total_pnl', 'total_quantity', 'avg_price'
+        ]
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        # Convert dates to strings for JSON serialization
+        if 'latest_trade_date' in df.columns:
+            df['latest_trade_date'] = pd.to_datetime(df['latest_trade_date']).astype(str)
+        
+        return {
+            "columns": df.columns.tolist(),
+            "data": df.replace({np.nan: None}).to_dict('records'),
+            "query_used": query_to_execute[:100] + "..." if len(query_to_execute) > 100 else query_to_execute
+        }
+
+    except Exception as e:
+        return {
+            "error": f"Error in get_deals_data: {str(e)}",
+            "query_attempted": query if query else config.graphquery
+        }
+
+
 def generate_graph_data(prompt: str) -> Dict[str, Any]:
     """
-    Robust graph data generator with dtype handling and fallbacks
+    Generates visualizations from the aggregated graph query results
     """
     try:
         deals_data = get_deals_data()
         
         if "error" in deals_data:
             return {
-                "response": "Unable to fetch deals data. Please try again later.",
+                "response": "Failed to fetch aggregated deals data",
                 "error": deals_data["error"]
             }
-        
+            
         df = pd.DataFrame(deals_data['data'])
         
-        # Clean and convert numeric columns
-        numeric_cols = []
-        for col in df.columns:
-            try:
-                # Try converting to numeric, coercing errors to NaN
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-                if not df[col].isna().all():  # Only keep if we got some numbers
-                    numeric_cols.append(col)
-            except:
-                continue
-        
-        if not numeric_cols:
-            return {
-                "response": "No numeric data available for visualization.",
-                "suggested_action": "fetch_raw_data"
-            }
-        
-        # Handle specific requests with proper dtype checking
-        if "realized value" in prompt.lower():
-            target_col = 'ltd_realized_value'
-            if target_col in numeric_cols:
-                # Aggregate by deal_num first
-                deal_aggregates = df.groupby('deal_num')[target_col].sum().reset_index()
-                top_deals = deal_aggregates.nlargest(5, target_col)
-                
-                return {
-                    "response": "Top deals by realized value:",
-                    "graph_data": {
-                        "type": "bar",
-                        "title": "Top Deals by Realized Value",
-                        "labels": top_deals['deal_num'].astype(str).tolist(),
-                        "values": top_deals[target_col].tolist(),
-                        "dataset_label": "Realized Value (USD)"
-                    }
-            }
-            else:
-                return {
-                    "response": f"Column '{target_col}' not available or not numeric. Available numeric columns: {', '.join(numeric_cols)}",
-                    "suggested_action": "show_available_columns"
-                }
-        
-        # Fallback to first available numeric column
-        fallback_col = numeric_cols[0]
-        clean_df = df.dropna(subset=[fallback_col])
-        sample_data = clean_df.nlargest(5, fallback_col)
-        
+        # Handle different prompt types
+        if "realized" in prompt.lower():
+            return generate_realized_pnl_graph(df)
+        elif "unrealized" in prompt.lower():
+            return generate_unrealized_pnl_graph(df)
+        elif "trend" in prompt.lower() or "over time" in prompt.lower():
+            return generate_trend_graph(df)
+        elif "compare" in prompt.lower():
+            return generate_comparison_graph(df)
+        else:
+            return generate_default_graph(df)
+
+    except Exception as e:
         return {
-            "response": f"Showing data for {fallback_col.replace('_', ' ')} (fallback):",
+            "response": f"Graph generation failed: {str(e)}",
+            "error": str(e)
+        }
+
+
+def generate_realized_pnl_graph(df: pd.DataFrame) -> Dict[str, Any]:
+    """Generate bar chart of top deals by realized PnL"""
+    top_deals = df.nlargest(10, 'total_realized_pnl')
+    
+    return {
+        "response": "Top deals by realized PnL",
+        "graph_data": {
+            "type": "bar",
+            "title": "Realized PnL by Deal",
+            "labels": top_deals['deal_num'].astype(str).tolist(),
+            "values": top_deals['total_realized_pnl'].tolist(),
+            "dataset_label": "Realized PnL (USD)"
+        }
+    }
+
+
+def generate_trend_graph(df: pd.DataFrame) -> Dict[str, Any]:
+    """Generate proper time-series line chart from the aggregated data"""
+    try:
+        # Ensure we have the required columns
+        if 'latest_trade_date' not in df.columns:
+            raise ValueError("Missing date column for trend analysis")
+            
+        # Convert and sort by date
+        df['date'] = pd.to_datetime(df['latest_trade_date'])
+        df = df.sort_values('date')
+        
+        # Group by date (daily frequency)
+        df['date_str'] = df['date'].dt.strftime('%Y-%m-%d')
+        grouped = df.groupby('date_str').agg({
+            'total_realized_pnl': 'sum',
+            'total_unrealized_pnl': 'sum',
+            'total_pnl': 'sum'
+        }).reset_index()
+        
+        # Create line chart dataset
+        return {
+            "response": "PnL Trend Over Time",
             "graph_data": {
-                "type": "bar",
-                "title": f"Top Deals by {fallback_col.replace('_', ' ')}",
-                "labels": sample_data['deal_num'].astype(str).tolist(),
-                "values": sample_data[fallback_col].tolist()
+                "type": "line",
+                "title": "Daily PnL Trend",
+                "labels": grouped['date_str'].tolist(),
+                "datasets": [
+                    {
+                        "label": "Realized PnL",
+                        "data": grouped['total_realized_pnl'].tolist(),
+                        "borderColor": "rgba(75, 192, 192, 1)",
+                        "tension": 0.1
+                    },
+                    {
+                        "label": "Total PnL",
+                        "data": grouped['total_pnl'].tolist(),
+                        "borderColor": "rgba(54, 162, 235, 1)",
+                        "tension": 0.1
+                    }
+                ],
+                "options": {
+                    "scales": {
+                        "y": {
+                            "beginAtZero": False,
+                            "title": {
+                                "display": True,
+                                "text": "USD Value"
+                            }
+                        },
+                        "x": {
+                            "title": {
+                                "display": True,
+                                "text": "Trade Date"
+                            }
+                        }
+                    }
+                }
             }
         }
         
     except Exception as e:
         return {
-            "response": f"Failed to generate graph: {str(e)}",
-            "error": str(e),
-            "suggested_action": "fetch_raw_data"
+            "response": f"Could not generate trend graph: {str(e)}",
+            "error": str(e)
         }
+
+
+def generate_comparison_graph(df: pd.DataFrame) -> Dict[str, Any]:
+    """Generate comparison of multiple PnL metrics"""
+    top_deals = df.nlargest(10, 'total_pnl')
+    
+    return {
+        "response": "Comparison of PnL Metrics",
+        "graph_data": {
+            "type": "bar",
+            "title": "PnL Comparison by Deal",
+            "labels": top_deals['deal_num'].astype(str).tolist(),
+            "datasets": [
+                {
+                    "label": "Realized",
+                    "data": top_deals['total_realized_pnl'].tolist(),
+                    "backgroundColor": "rgba(54, 162, 235, 0.7)"
+                },
+                {
+                    "label": "Unrealized",
+                    "data": top_deals['total_unrealized_pnl'].tolist(),
+                    "backgroundColor": "rgba(255, 99, 132, 0.7)"
+                }
+            ]
+        }
+    }
 
 # Define a set of callable functions
 user_functions: Set[Callable[..., Any]] = {
