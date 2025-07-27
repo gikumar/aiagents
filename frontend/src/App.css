@@ -1,3 +1,5 @@
+/* src/App.css */
+
 /* General Styling */
 body {
   margin: 0;
@@ -700,4 +702,31 @@ body {
   border: 1px solid #f5c6cb;
   padding: 0.75rem 1.25rem;
   border-radius: 0.25rem;
+}
+
+.data-table-container {
+    max-width: 100%;
+    overflow-x: auto;
+    margin: 10px 0;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+
+.data-table-container table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.data-table-container th, 
+.data-table-container td {
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+}
+
+.token-info-small {
+    font-size: 0.8em;
+    color: #666;
+    margin-top: 8px;
+    text-align: right;
 }

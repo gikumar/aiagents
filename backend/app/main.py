@@ -57,9 +57,9 @@ class AskRequest(BaseModel):
 
 class AskResponse(BaseModel):
     response: str
-    thread_id: str
-    input_tokens: int
-    output_tokens: int
+    thread_id: Optional[str]
+    input_tokens: Optional[int]
+    output_tokens: Optional[int]
     graph_data: Optional[Dict[str, Any]] = None
     status: str
 

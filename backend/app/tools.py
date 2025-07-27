@@ -11,6 +11,7 @@ from databricks import sql
 import pandas as pd
 import numpy as np
 from . import config
+from typing import Any, Dict, List, Optional, Tuple
 
 # Disable SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -97,63 +98,111 @@ def get_db_connection():
         print(f"Database connection failed: {str(e)}")
         return None
 
+from typing import Dict, Any
+
+# def generate_graph_data(prompt: str) -> Dict[str, Any]:
+#     """
+#     This function generates graph data based on a specific user prompt.
+#     It should parse the prompt and return a structured format that the frontend expects.
+#     """
+#     if "monthly pnl" in prompt.lower():
+#         return {
+#             "graph": {
+#                 "type": "bar",
+#                 "title": "Monthly PnL",
+#                 "labels": ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
+#                 "values": [12000, 15000, 13000, 17000, 16000, 18000]
+#             }
+#         }
+#     elif "deal volume" in prompt.lower():
+#         return {
+#                 "type": "bar",
+#                 "title": "Deal Volumes",
+#                 "labels": ["Deal A", "Deal B", "Deal C"],
+#                 "values": [300, 400, 500]
+#             }
+#     else:
+#         raise ValueError("Unable to generate graph data from prompt")
+
+def generate_graph_data(prompt: str) -> Dict[str, Any]:
+    """
+    Robust graph data generator with dtype handling and fallbacks
+    """
+    try:
+        deals_data = get_deals_data()
+        
+        if "error" in deals_data:
+            return {
+                "response": "Unable to fetch deals data. Please try again later.",
+                "error": deals_data["error"]
+            }
+        
+        df = pd.DataFrame(deals_data['data'])
+        
+        # Clean and convert numeric columns
+        numeric_cols = []
+        for col in df.columns:
+            try:
+                # Try converting to numeric, coercing errors to NaN
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+                if not df[col].isna().all():  # Only keep if we got some numbers
+                    numeric_cols.append(col)
+            except:
+                continue
+        
+        if not numeric_cols:
+            return {
+                "response": "No numeric data available for visualization.",
+                "suggested_action": "fetch_raw_data"
+            }
+        
+        # Handle specific requests with proper dtype checking
+        if "realized value" in prompt.lower():
+            target_col = 'ltd_realized_value'
+            if target_col in numeric_cols:
+                # Aggregate by deal_num first
+                deal_aggregates = df.groupby('deal_num')[target_col].sum().reset_index()
+                top_deals = deal_aggregates.nlargest(5, target_col)
+                
+                return {
+                    "response": "Top deals by realized value:",
+                    "graph_data": {
+                        "type": "bar",
+                        "title": "Top Deals by Realized Value",
+                        "labels": top_deals['deal_num'].astype(str).tolist(),
+                        "values": top_deals[target_col].tolist(),
+                        "dataset_label": "Realized Value (USD)"
+                    }
+            }
+            else:
+                return {
+                    "response": f"Column '{target_col}' not available or not numeric. Available numeric columns: {', '.join(numeric_cols)}",
+                    "suggested_action": "show_available_columns"
+                }
+        
+        # Fallback to first available numeric column
+        fallback_col = numeric_cols[0]
+        clean_df = df.dropna(subset=[fallback_col])
+        sample_data = clean_df.nlargest(5, fallback_col)
+        
+        return {
+            "response": f"Showing data for {fallback_col.replace('_', ' ')} (fallback):",
+            "graph_data": {
+                "type": "bar",
+                "title": f"Top Deals by {fallback_col.replace('_', ' ')}",
+                "labels": sample_data['deal_num'].astype(str).tolist(),
+                "values": sample_data[fallback_col].tolist()
+            }
+        }
+        
+    except Exception as e:
+        return {
+            "response": f"Failed to generate graph: {str(e)}",
+            "error": str(e),
+            "suggested_action": "fetch_raw_data"
+        }
+
 # Define a set of callable functions
 user_functions: Set[Callable[..., Any]] = {
     submit_support_ticket, get_deals_data
 }
-
-
-# import pandas as pd
-# import time
-# import numpy as np
-# import requests
-# import json
-# import os
-# import ssl
-# import urllib3
-# import base64
-# import io
-# #from typing import Optional, Dict, Any, List
-
-# #from promptflow import tool
-# from functools import wraps
-# import matplotlib.pyplot as plt
-
-
-
-# from openai import AzureOpenAI
-# from azure.identity import DefaultAzureCredential
-# from azure.ai.projects import AIProjectClient
-
-# # #from azure.ai.agents import tool
-# # from azure.ai.agents import tool
-# # from azure.ai.agents import FunctionTool
-# # from azure.ai.agents import CustomFunctionTool
-# from azure.ai.agents.models import FunctionTool
-
-
-# import os
-# import time
-# import json
-
-# from . import config
-
-# import datetime
-# from datetime import datetime
-# from typing import Any, Callable, Set, Dict, List, Optional
-# from azure.ai.agents.tool import tool
-
-
-# # Disable SSL warnings
-# urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-# ssl._create_default_https_context = ssl._create_unverified_context
-# # tools.py
-# import json
-
-
-# def get_deals_data(query: str) -> str:
-#     result = {"columns": ["id", "value"], "data": [{"id":1,"value":100}]}
-#     return json.dumps(result)
-
-# @tool
-
