@@ -1,0 +1,27 @@
+/* Theme Variables */
+:root {
+  /* Light Theme Defaults */
+  --color-primary: #66BB6A;
+  --color-primary-dark: #4CAF50;
+  --color-bg: #ffffff;
+  --color-bg-secondary: #f8f9fa;
+  --color-text: #212529;
+  --color-text-secondary: #6c757d;
+  --color-border: #e0e0e0;
+  --color-shadow: rgba(0,0,0,0.1);
+  --user-bubble-bg: linear-gradient(135deg, #4CAF50 0%, #66BB6A 100%);
+  --agent-bubble-bg: #ffffff;
+}
+
+[data-theme="dark"] {
+  --color-primary: #81C784;
+  --color-primary-dark: #66BB6A;
+  --color-bg: #121212;
+  --color-bg-secondary: #1E1E1E;
+  --color-text: #E0E0E0;
+  --color-text-secondary: #9E9E9E;
+  --color-border: #424242;
+  --color-shadow: rgba(0,0,0,0.3);
+  --user-bubble-bg: linear-gradient(135deg, #2E7D32 0%, #388E3C 100%);
+  --agent-bubble-bg: #1E1E1E;
+}
