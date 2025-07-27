@@ -8,15 +8,23 @@ import json
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 
+#from azure.ai.projects import AIProjectClient
+#from azure.ai.projects.models import ToolSet
+
 from azure.identity import DefaultAzureCredential
-from azure.ai.projects import AIProjectClient
-from azure.ai.agents.models import FunctionTool
+from azure.ai.agents import AgentsClient
+from azure.ai.agents.models import FunctionTool, ToolSet, ListSortOrder, MessageRole
+#from user_functions import user_functions
 
-from .tools import fetch_weather
-#from .tools import get_or_create_agent, planner_strategy
 from .config import agent_behavior_instructions, PROJECT_ENDPOINT, DATABRICKS_HTTP_PATH, MODEL_DEPLOYMENT_NAME
-
+from .config import query, graphquery
+from .config import orchestrator_agent_name, orchestrator_instruction
 from typing import Any, Callable, Set, Dict, List, Optional
+from .tools import user_functions 
+#from tools import user_functions
+#from .tools import register_tools
+#from .tools import fetch_weather, get_deals_data
+
 
 @dataclass
 class AgentResponse:
@@ -48,99 +56,97 @@ class AgentFactory:
         """
         Process user request and generate appropriate response
         """       
-        # Initialize token counts
-        prompt_tokens = 0
-        completion_tokens = 0
-        tool_outputs_for_submission = []
-
         try:
-            # Initialize the AI project
-            project_client = AIProjectClient(
-                credential=DefaultAzureCredential(),
-                endpoint=PROJECT_ENDPOINT
-            )
+            prompt_tokens = 0
+            completion_tokens = 0
 
-            user_functions = {fetch_weather}
-            functions = FunctionTool(functions=user_functions)
-
-
-            with project_client:
-                agent = project_client.agents.create_agent(
-                    model= MODEL_DEPLOYMENT_NAME,
-                    name="weather-agent",
-                    instructions="You are a helpful agent. When needed, use fetch_weather.",
-                    tools=functions.definitions
+            # Connect to the Agent client
+            agent_client = AgentsClient(
+                endpoint=PROJECT_ENDPOINT,
+                credential=DefaultAzureCredential
+                (exclude_environment_credential=True,
+                exclude_managed_identity_credential=True)
                 )
 
-                print(f"Agent created, ID = {agent.id}")
+            with agent_client:
+                functions = FunctionTool(user_functions)
+                toolset = ToolSet()
+                toolset.add(functions)
+                agent_client.enable_auto_function_calls(toolset)
 
-                style_instructions = {
-                    "Short Answer": "Give a very brief and to-the-point answer.",
-                    "Balanced": "Answer clearly and concisely with key insights.",
-                    "Detailed": "Provide a comprehensive and detailed analysis with all supporting reasoning.",
-                    "Structured": "Provide your answer in a highly structured format, using markdown headings, bullet points, and numbered lists where appropriate to organize information clearly."
-                }
-
-                thread = project_client.agents.threads.create()
-                project_client.agents.messages.create(
-                    thread_id=thread.id,
-                    role="user",
-                    content="Tell me the weather in London."
+                agent = agent_client.create_agent(
+                    model=MODEL_DEPLOYMENT_NAME,
+                    name="support-agent",
+                    instructions="""You are a technical support agent.
+                                    When a user has a technical issue, you get their email address and a description of the issue.
+                                    Then you use those values to submit a support ticket using the function available to you.
+                                    If a file is saved, tell the user the file name.
+                                """,
+                    toolset=toolset
                 )
 
-                run = project_client.agents.runs.create(thread_id=thread.id, agent_id=agent.id)
+                thread = agent_client.threads.create()
+                print(f"You're chatting with: {agent.name} ({agent.id})")    
 
-                # 3. Poll run status, handle function call
-                while run.status in ["queued", "in_progress", "requires_action"]:
-                    time.sleep(1)
+                # Loop until the user types 'quit'
+                while True:
+                    user_prompt = prompt
+                    # Send a prompt to the agent
+                    message = agent_client.messages.create(
+                        thread_id=thread.id,
+                        role="user",
+                        content=user_prompt
+                        )
                     
-                    run = project_client.agents.runs.get(thread_id=thread.id, run_id=run.id)
+                    run = agent_client.runs.create_and_process(thread_id=thread.id, agent_id=agent.id)
+                    prompt_tokens = run.usage.prompt_tokens if run.usage.prompt_tokens is not None else 0
+                    completion_tokens = run.usage.completion_tokens if run.usage.completion_tokens is not None else 0
                     
-                    if run.status == "failed":
+                    # Check the run status for failures            
+                    if run.status == "failed":                
+                        print(f"Run failed: {run.last_error}")
                         return AgentResponse(
-                            response=f"Run failed: {run.last_error}",
+                            response=f"An unexpected error occurred. Please check the server logs for details.",
                             thread_id=thread.id,
                             is_error=True,
-                            input_tokens=0, # Ensure integer value
-                            output_tokens=0  # Ensure integer value
-                        )
-                    if run.status == "requires_action":
-                        calls = run.required_action.submit_tool_outputs.tool_calls
-                        outputs = []
-                        for call in calls:
-                            if call.function.name == "fetch_weather":
-                                result = fetch_weather("London")
-                                outputs.append({"tool_call_id": call.id, "output": result})
-                        
-                        project_client.agents.runs.submit_tool_outputs(thread_id=thread.id, run_id=run.id, tool_outputs=outputs)
-
-                        print("Final status:", run.status)
-
-                messages = project_client.agents.messages.list(thread_id=thread.id)
-                # for msg in messages:
-                #     print(f"{msg['role']}: {msg['content']}")
-
-                for msg in reversed(list(messages)):
-                    if msg.role == "assistant" and msg.text_messages:
-                        response_text = msg.text_messages[-1].text.value
-                        break # Found the latest assistant message, break the loop
-                
-                return AgentResponse(
-                    response=response_text,
-                    thread_id=thread.id,
-                    input_tokens=111, # Use actual token counts
-                    output_tokens=222 # Use actual token counts
-                    )
-        except Exception as e:
-            # Log the full error for debugging
-            print(f"Error processing request: {e}\n{traceback.format_exc()}")
-            return AgentResponse(
-                response=f"An unexpected error occurred. Please check the server logs for details.",
-                thread_id=123,
-                is_error=True,
-                input_tokens=0, # Ensure integer value
-                output_tokens=0  # Ensure integer value
+                            input_tokens=prompt_tokens, # Ensure integer value
+                            output_tokens=completion_tokens  # Ensure integer value
             )
+                    
+                    # Get the conversation history        
+                    print("\nConversation Log:\n")        
+                    #messages = agent_client.messages.list(thread_id=thread.id, order=ListSortOrder.ASCENDING)        
+                    messages = list(agent_client.messages.list(thread_id=thread.id, order=ListSortOrder.ASCENDING))
+
+                    agent_response = None
+
+                    for message in reversed(messages):  # loop from latest to oldest
+                        if message.role == MessageRole.AGENT and message.text_messages:
+                            agent_response = message.text_messages[-1].text.value
+                        break
+                                        
+                    if agent_response:
+                        print(f"Agent: {agent_response}\n")
+                        return AgentResponse(
+                            response=agent_response,
+                            thread_id=thread.id,
+                            is_error=False,
+                            input_tokens=prompt_tokens,
+                            output_tokens=completion_tokens
+                        )
+                    else:
+                        print("No agent response found.")
+                        return AgentResponse(
+                            response="No agent response found.",
+                            thread_id=thread.id,
+                            is_error=True,
+                            input_tokens=prompt_tokens,
+                            output_tokens=completion_tokens
+                        )
+        finally:
+                "closed"
+
+                
 
 
     
