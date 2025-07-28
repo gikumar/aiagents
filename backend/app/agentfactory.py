@@ -45,7 +45,8 @@ class AgentFactory:
         # self.toolset.add(FunctionTool(user_functions))
         # self.agent_client.enable_auto_function_calls(self.toolset)
 
-    
+
+    #get or create the agent.
     def get_or_create_agent(self) -> str:
         """Deletes any previously created agent with the same name, then creates a new one."""
 
@@ -85,29 +86,25 @@ class AgentFactory:
                     if fn.__name__ == tool_name:
                         return json.dumps(fn(**args))  # Ensure it returns a serializable string
                 raise ValueError(f"No tool found for name: {tool_name}")
-
-
+    
+    
     def process_request2(
-    self,
-    prompt: str,
-    agent_mode: str = "Balanced",
-    file_content: Optional[str] = None,
-    chat_history: Optional[list] = None,
-    thread_id: Optional[str] = None,
-) -> AgentResponse:
+        self,
+        prompt: str,
+        agent_mode: str = "Balanced",
+        file_content: Optional[str] = None,
+        chat_history: Optional[list] = None,
+        thread_id: Optional[str] = None,
+    ) -> AgentResponse:
         try:
             agent_id = self.get_or_create_agent()
             thread = self.agent_client.threads.get(thread_id) if thread_id else self.agent_client.threads.create()
             print(f"Using thread ID: {thread.id}")
-            
 
             behavior_instruction = agent_behavior_instructions.get(agent_mode, "")
-
             if not behavior_instruction:
                 print(f"Warning: Unknown agent_mode '{agent_mode}', defaulting to basic instructions")
-    
-            # Combine base orchestrator instructions with behavior instructions
-            #full_instruction = f"{orchestrator_instruction}\n\nBehavior mode instructions:\n{behavior_instruction}"
+
             full_instruction = f"""
                 [Orchestrator Instructions]
                 {orchestrator_instruction}
@@ -123,22 +120,19 @@ class AgentFactory:
                     content=full_instruction
                 )
 
-            # Prepare message content to send to the agent
+            # Prepare user message
             user_message_content = prompt
-            
-            # Compose final user message content
+            if self.is_graph_prompt(prompt):
+                user_message_content = "[Trigger generate_graph_data tool]\n" + user_message_content
+
             if file_content:
-                # According to your config, the agent must call 'get_insights_from_text' tool with entire file content
-                # So, you can append file content with prompt or instruct the agent to use the tool
-                # One approach: add the file content in the prompt with a special delimiter
-                #combined_content = f"{prompt}\n\n[FILE_CONTENT_START]\n{file_content}\n[FILE_CONTENT_END]"
                 user_message_content += f"\n\n[FILE_CONTENT_START]\n{file_content}\n[FILE_CONTENT_END]"
-                  
+
             if chat_history:
                 for msg in chat_history:
                     role = msg["role"]
                     if role == "agent":
-                        role = "assistant"  # Azure expects 'assistant'
+                        role = "assistant"
                     elif role not in {"user", "assistant"}:
                         print(f"Warning: Unsupported role '{role}', defaulting to 'user'")
                         role = "user"
@@ -148,17 +142,16 @@ class AgentFactory:
                         content=msg["content"]
                     )
 
-            # Send current user message
+            # Send the user's message
             self.agent_client.messages.create(
                 thread_id=thread.id,
                 role="user",
                 content=user_message_content
-            ) 
-            run = self.agent_client.runs.create_and_process(thread_id=thread.id, agent_id=agent_id)
+            )
 
+            run = self.agent_client.runs.create_and_process(thread_id=thread.id, agent_id=agent_id)
             prompt_tokens = run.usage.prompt_tokens or 0
             completion_tokens = run.usage.completion_tokens or 0
-            
 
             if run.status == "failed":
                 print(f"Run failed: {run.last_error}")
@@ -176,36 +169,42 @@ class AgentFactory:
             for message in reversed(messages):
                 if message.role == MessageRole.AGENT and message.text_messages:
                     agent_response = message.text_messages[-1].text.value
-                    break  # only break after finding the first valid agent message
+                    break
 
-            if agent_response:
-                # Check if response contains both text and graph data
-                if isinstance(agent_response, dict) and "graph_data" in agent_response:
-                    return AgentResponse(
-                        response=agent_response.get("response", "Here's the requested data:"),
-                        thread_id=thread.id,
-                        input_tokens=prompt_tokens,
-                        output_tokens=completion_tokens,
-                        graph_data=agent_response.get("graph_data"),
-                        is_error=False
-                    )
-                else:
-                    return AgentResponse(
-                        response=agent_response,
-                        thread_id=thread.id,
-                        input_tokens=prompt_tokens,
-                        output_tokens=completion_tokens,
-                        graph_data=None,
-                        is_error=False
-                    )
-            else:
+            # === Final response parsing ===
+            if isinstance(agent_response, dict) and "graph_data" in agent_response:
                 return AgentResponse(
-                    response="No agent response was returned.",
+                    response=agent_response.get("response", "Here's the requested data:"),
                     thread_id=thread.id,
-                    is_error=True,
                     input_tokens=prompt_tokens,
-                    output_tokens=completion_tokens
+                    output_tokens=completion_tokens,
+                    graph_data=agent_response.get("graph_data"),
+                    is_error=False
                 )
+
+            try:
+                parsed_response = json.loads(agent_response)
+                if isinstance(parsed_response, dict) and "graph_data" in parsed_response:
+                    return AgentResponse(
+                        response=parsed_response.get("response", "Here's the requested data:"),
+                        thread_id=thread.id,
+                        input_tokens=prompt_tokens,
+                        output_tokens=completion_tokens,
+                        graph_data=parsed_response.get("graph_data"),
+                        is_error=False
+                    )
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+            return AgentResponse(
+                response=agent_response,
+                thread_id=thread.id,
+                input_tokens=prompt_tokens,
+                output_tokens=completion_tokens,
+                graph_data=None,
+                is_error=False
+            )
+
         except Exception as e:
             print("Exception in process_request2:")
             print(traceback.format_exc())
@@ -214,7 +213,15 @@ class AgentFactory:
                 thread_id=thread.id if 'thread' in locals() else None,
                 is_error=True
             )
+
+    @staticmethod
+    def is_graph_prompt(prompt: str) -> bool:
+        graph_keywords = ["generate graph", "show me a graph", "plot", "visualize", "graph", "chart", "trend"]
+        prompt_lower = prompt.lower()
+        return any(keyword in prompt_lower for keyword in graph_keywords)
     
+
+
     def delete_old_threads(self, keep_last_n: int = 10):
         """
         Deletes all threads except the most recent N threads.

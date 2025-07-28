@@ -1,6 +1,5 @@
 #tools.py
 
-###labs
 import json
 import time
 from pathlib import Path
@@ -260,6 +259,21 @@ def generate_graph_data(prompt: str) -> Dict[str, Any]:
             "response": f"Graph generation failed: {str(e)}",
             "error": str(e)
         }
+
+def generate_default_graph(df: pd.DataFrame) -> Dict[str, Any]:
+    """Fallback bar chart using total PnL"""
+    top_deals = df.nlargest(5, 'total_pnl')
+
+    return {
+        "response": "Default graph: Top deals by Total PnL",
+        "graph_data": {
+            "type": "bar",
+            "title": "Top Deals by Total PnL",
+            "labels": top_deals['deal_num'].astype(str).tolist(),
+            "values": top_deals['total_pnl'].tolist(),
+            "dataset_label": "Total PnL (USD)"
+        }
+    }
 
 
 def generate_realized_pnl_graph(df: pd.DataFrame) -> Dict[str, Any]:
