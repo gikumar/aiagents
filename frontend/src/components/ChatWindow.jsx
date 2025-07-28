@@ -73,12 +73,6 @@ const XCircleIcon = () => (
   </svg>
 );
 
-const TokenIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" className="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M7 7h.01M7 3h5.5c.58 0 1.12.23 1.52.63l3.58 3.58c.4.4.63.94.63 1.52V21c0 1.1-.9 2-2 2H7c-1.1 0-2-.9-2-2V5c0-1.1.9-2 2-2zm0 14h10V9H7v12z" />
-  </svg>
-);
-
 const ThemeIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" className="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
     <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
@@ -126,7 +120,6 @@ const ChatWindow = () => {
   const [outputTokens, setOutputTokens] = useState(0);
   const [isSidebarHidden, setIsSidebarHidden] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(350);
-  const [defaultGraphType, setDefaultGraphType] = useState("bar");
   const [theme, setTheme] = useState('light');
 
   const chatEndRef = useRef(null);
@@ -494,51 +487,49 @@ const ChatWindow = () => {
 
         <div className="settings-section">
           <label className="settings-label">Agent Behavior</label>
-          <select
-            className="agent-behavior-select"
-            value={agentBehavior}
-            onChange={(e) => setAgentBehavior(e.target.value)}
-          >
-            <option value="Balanced">Balanced</option>
-            <option value="Short">Short</option>
-            <option value="Detailed">Detailed</option>
-            <option value="Structured">Structured</option>
-          </select>
+          <div className="behavior-options">
+            <button
+              className={`behavior-option ${agentBehavior === "Balanced" ? "active" : ""}`}
+              onClick={() => setAgentBehavior("Balanced")}
+            >
+              Balanced
+            </button>
+            <button
+              className={`behavior-option ${agentBehavior === "Short" ? "active" : ""}`}
+              onClick={() => setAgentBehavior("Short")}
+            >
+              Short
+            </button>
+            <button
+              className={`behavior-option ${agentBehavior === "Detailed" ? "active" : ""}`}
+              onClick={() => setAgentBehavior("Detailed")}
+            >
+              Detailed
+            </button>
+            <button
+              className={`behavior-option ${agentBehavior === "Structured" ? "active" : ""}`}
+              onClick={() => setAgentBehavior("Structured")}
+            >
+              Structured
+            </button>
+          </div>
         </div>
 
         <div className="settings-section">
           <label className="settings-label">Message Layout</label>
-          <select
-            className="agent-behavior-select"
-            value={messageLayout}
-            onChange={(e) => setMessageLayout(e.target.value)}
-          >
-            <option value="alternating">Alternating</option>
-            <option value="same-side">Same Side</option>
-          </select>
-        </div>
-
-        <div className="settings-section">
-          <label className="settings-label">Default Graph Type</label>
-          <select
-            className="agent-behavior-select"
-            value={defaultGraphType}
-            onChange={(e) => setDefaultGraphType(e.target.value)}
-          >
-            <option value="bar">Bar Chart</option>
-            <option value="line">Line Chart</option>
-            <option value="pie">Pie Chart</option>
-          </select>
-        </div>
-
-        <div className="settings-section token-usage-section">
-          <div className="token-usage-header">
-            <TokenIcon />
-            <h3>Token Usage (Last Request)</h3>
-          </div>
-          <div className="token-info">
-            <p>Input Tokens: <span>{inputTokens}</span></p>
-            <p>Output Tokens: <span>{outputTokens}</span></p>
+          <div className="layout-options">
+            <button
+              className={`layout-option ${messageLayout === "alternating" ? "active" : ""}`}
+              onClick={() => setMessageLayout("alternating")}
+            >
+              Alternating
+            </button>
+            <button
+              className={`layout-option ${messageLayout === "same-side" ? "active" : ""}`}
+              onClick={() => setMessageLayout("same-side")}
+            >
+              Same Side
+            </button>
           </div>
         </div>
 
