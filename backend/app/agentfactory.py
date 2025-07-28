@@ -46,20 +46,25 @@ class AgentFactory:
         # self.agent_client.enable_auto_function_calls(self.toolset)
 
     
-    # get_or_create_agent
     def get_or_create_agent(self) -> str:
-        """Reuse the same agent if created; otherwise, create it."""
+        """Deletes any previously created agent with the same name, then creates a new one."""
 
-        if self.agent:
-            return self.agent.id
-
+        self.delete_old_threads(keep_last_n=10)
+        
+        # Step 1: List and delete any agents with the same name
+        existing_agents = list(self.agent_client.list_agents())
+        for agent in existing_agents:
+            if agent.name == orchestrator_agent_name:
+                print(f"Deleting old agent with name '{agent.name}' and ID '{agent.id}'")
+                self.agent_client.delete_agent(agent.id)
+        
+        # Step 2: Recreate the toolset
         self.toolset = ToolSet()
-
         tool_functions = list(user_functions) + [generate_graph_data]
         self.toolset.add(FunctionTool(tool_functions))
-                
         self.agent_client.enable_auto_function_calls(self.toolset)
 
+        # Step 3: Create new agent
         self.agent = self.agent_client.create_agent(
             model=MODEL_DEPLOYMENT_NAME,
             name=orchestrator_agent_name,
@@ -69,7 +74,7 @@ class AgentFactory:
             temperature=0.99
         )
 
-        print(f"Agent created: {self.agent.name} ({self.agent.id})")
+        print(f"✅ Agent created: {self.agent.name} ({self.agent.id})")
         return self.agent.id
 
     def run_tool(self, tool_name: str, args: dict) -> str:
@@ -209,3 +214,22 @@ class AgentFactory:
                 thread_id=thread.id if 'thread' in locals() else None,
                 is_error=True
             )
+    
+    def delete_old_threads(self, keep_last_n: int = 10):
+        """
+        Deletes all threads except the most recent N threads.
+        """
+        try:
+            threads = list(self.agent_client.threads.list(order=ListSortOrder.DESCENDING))
+            print(f"Found {len(threads)} threads")
+
+            # Keep the most recent N threads
+            threads_to_delete = threads[keep_last_n:]
+
+            for thread in threads_to_delete:
+                print(f"Deleting thread: {thread.id}")
+                self.agent_client.threads.delete(thread.id)
+
+            print(f"Deleted {len(threads_to_delete)} old threads, kept {keep_last_n} latest.")
+        except Exception as e:
+            print(f"Error while deleting threads: {e}")
