@@ -79,6 +79,12 @@ const ThemeIcon = () => (
   </svg>
 );
 
+const AttachmentIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" className="icon-small" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+  </svg>
+);
+
 const FileLoadingIndicator = () => (
   <div className="file-loading-indicator">
     <div className="loading-dot dot-1"></div>
@@ -428,6 +434,10 @@ const ChatWindow = () => {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  const handleFileClick = () => {
+    fileInputRef.current?.click();
+  };
+
   return (
     <div className="app-container" ref={appContainerRef}>
       {/* Left Sidebar */}
@@ -451,38 +461,6 @@ const ChatWindow = () => {
             readOnly
             title={currentThreadId}
           />
-        </div>
-
-        <div className="settings-section file-upload-section">
-          <label className="settings-label">Upload a file for context</label>
-          <div className="drag-drop-area">
-            <input
-              type="file"
-              className="file-input"
-              ref={fileInputRef}
-              onChange={handleFileUpload}
-              accept=".txt,.md,.csv,.json,.log"
-            />
-            <p>Drag and drop file here</p>
-            <p>Limit 200MB per file</p>
-            <button className="browse-files-button">Browse files</button>
-          </div>
-          {uploadedFile && (
-            <div className="uploaded-file-info">
-              <span className="file-name">{uploadedFile.name}</span>
-              {uploadedFile.isLoading && <FileLoadingIndicator />}
-              {uploadedFile.error && (
-                <span className="file-error-text">({uploadedFile.error})</span>
-              )}
-              <button
-                onClick={handleClearFile}
-                className="clear-file-button"
-                title="Clear uploaded file"
-              >
-                <XCircleIcon />
-              </button>
-            </div>
-          )}
         </div>
 
         <div className="settings-section">
@@ -614,31 +592,53 @@ const ChatWindow = () => {
 
         <div className="input-area">
           <form onSubmit={handleSubmit} className="input-form">
-            {uploadedFile && uploadedFile.name && (
+            <input
+              type="file"
+              className="file-input"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              accept=".txt,.md,.csv,.json,.log"
+              style={{ display: 'none' }}
+            />
+            {uploadedFile && (
               <div className="file-context-display">
                 <span className="file-name-tag">
                   <span className="file-icon">📄</span> {uploadedFile.name}
                 </span>
                 {uploadedFile.isLoading && <FileLoadingIndicator />}
-                {uploadedFile.error && (
-                  <span className="file-error-text">({uploadedFile.error})</span>
+                {!uploadedFile.isLoading && (
+                  <button
+                    onClick={handleClearFile}
+                    className="clear-file-button"
+                    title="Clear uploaded file"
+                  >
+                    <XCircleIcon />
+                  </button>
                 )}
               </div>
             )}
-            <textarea
-              className="input-textarea"
-              rows={3}
-              placeholder="Ask me anything..."
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              onKeyPress={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  handleSubmit(e);
-                }
-              }}
-              disabled={loading || (uploadedFile && uploadedFile.isLoading)}
-            ></textarea>
-            <div className="input-buttons">
+            <div className="input-row">
+              <button
+                type="button"
+                className="attach-button"
+                onClick={handleFileClick}
+                title="Attach file"
+              >
+                <AttachmentIcon />
+              </button>
+              <textarea
+                className="input-textarea"
+                rows={3}
+                placeholder="Ask me anything..."
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                onKeyPress={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    handleSubmit(e);
+                  }
+                }}
+                disabled={loading || (uploadedFile && uploadedFile.isLoading)}
+              ></textarea>
               <button
                 type="submit"
                 className={`send-button ${
