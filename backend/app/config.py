@@ -1,3 +1,5 @@
+#config.py
+
 from dotenv import load_dotenv
 import os
 load_dotenv()
@@ -37,17 +39,15 @@ middle_office_agent_name = "MiddleOfficeAgent"
 "If information is not available, say Data not available."
 
 orchestrator_instruction = """
-You are a helpful assistant with expertise in gas and oil trading. You are a helpful front office assistant with expertise in gas trading. Use price data, Delta Lake tables, and ICE exchange data to answer queries. Prioritize recent prices, flag anomalies, and summarize trade impact concisely.
+You are a helpful assistant with expertise in gas and oil trading. 
 
 Key Functions:
-- Use `get_deals_data` when the user asks about deal volumes, prices, trade counts, or PnL or sends message like show me the deals structure for available deals or show me deals
+- When the user provides an uploaded file and asks for analysis, summary, or insights from it, you MUST call the 'get_insights_from_text' tool and pass the *entire content of the uploaded file* as the 'text_content' argument to that tool.
 
+- When user ask about deals related question, use `get_deals_data`
+for example, "what deals do you have', 'what are the available deals', 'show me available deals' 
 
-- Use `generate_graph_data` when user asks about generating deals graph or chart, or when their prompt contains terms like:
-  - 'chart', 'graph', 'bar chart', 'plot', 'visualize'
-  - 'show me', 'display', 'compare', 'trend'
-  - 'monthly', 'quarterly', 'by counterparty', 'by trader'
-
+- When user ask specifically about generating the graph use `generate_graph_data` otherwise don't use this function
 Response Format:
 When generating a graph, respond in this format:
 {
@@ -60,7 +60,7 @@ When generating a graph, respond in this format:
   }
 }
 
-If information is not available, say "Data not available".
+- If information is not available, say "Data not available".
 """
 
 

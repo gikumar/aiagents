@@ -1,3 +1,4 @@
+#agentfactory.jsx
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 from azure.identity import DefaultAzureCredential
@@ -82,24 +83,33 @@ class AgentFactory:
 
 
     def process_request2(
-        self,
-        prompt: str,
-        agent_mode: str = "Balanced",
-        file_content: Optional[str] = None,
-        chat_history: Optional[list] = None,
-        is_graph_request: bool = False,
-        graph_type: str = "bar",
-        thread_id: Optional[str] = None
-    ) -> AgentResponse:
+    self,
+    prompt: str,
+    agent_mode: str = "Balanced",
+    file_content: Optional[str] = None,
+    chat_history: Optional[list] = None,
+    is_graph_request: bool = False,
+    graph_type: str = "bar",
+    thread_id: Optional[str] = None
+) -> AgentResponse:
         try:
             agent_id = self.get_or_create_agent()
             thread = self.agent_client.threads.get(thread_id) if thread_id else self.agent_client.threads.create()
             print(f"Using thread ID: {thread.id}")
 
+            # Compose final user message content
+            if file_content:
+                # According to your config, the agent must call 'get_insights_from_text' tool with entire file content
+                # So, you can append file content with prompt or instruct the agent to use the tool
+                # One approach: add the file content in the prompt with a special delimiter
+                combined_content = f"{prompt}\n\n[FILE_CONTENT_START]\n{file_content}\n[FILE_CONTENT_END]"
+            else:
+                combined_content = prompt
+
             message = self.agent_client.messages.create(
                 thread_id=thread.id,
                 role="user",
-                content=prompt
+                content=combined_content
             )
 
             run = self.agent_client.runs.create_and_process(thread_id=thread.id, agent_id=agent_id)
@@ -119,14 +129,14 @@ class AgentFactory:
 
             messages = list(self.agent_client.messages.list(thread_id=thread.id, order=ListSortOrder.ASCENDING))
             agent_response = None
-    
+
             for message in reversed(messages):
                 if message.role == MessageRole.AGENT and message.text_messages:
                     agent_response = message.text_messages[-1].text.value
                     break  # only break after finding the first valid agent message
 
             if agent_response:
-            # Check if response contains both text and graph data
+                # Check if response contains both text and graph data
                 if isinstance(agent_response, dict) and "graph_data" in agent_response:
                     return AgentResponse(
                         response=agent_response.get("response", "Here's the requested data:"),
@@ -152,8 +162,7 @@ class AgentFactory:
                     is_error=True,
                     input_tokens=prompt_tokens,
                     output_tokens=completion_tokens
-            )
-
+                )
         except Exception as e:
             print("Exception in process_request2:")
             print(traceback.format_exc())

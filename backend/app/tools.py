@@ -370,7 +370,15 @@ def generate_comparison_graph(df: pd.DataFrame) -> Dict[str, Any]:
         }
     }
 
+def get_insights_from_text(text_content: str) -> dict:
+    # For now, a simple placeholder that returns length and preview
+    preview = text_content[:500] + "..." if len(text_content) > 500 else text_content
+    return {
+        "summary": f"Received text content with length {len(text_content)} characters.",
+        "preview": preview
+    }
+
 # Define a set of callable functions
 user_functions: Set[Callable[..., Any]] = {
-    submit_support_ticket, get_deals_data
+    submit_support_ticket, get_deals_data, get_insights_from_text
 }

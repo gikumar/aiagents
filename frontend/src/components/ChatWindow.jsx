@@ -1,3 +1,4 @@
+//\src\Component\ChatWindow
 import axios from "axios";
 import {
   ArcElement,
@@ -12,7 +13,7 @@ import {
   Tooltip,
 } from "chart.js";
 import PropTypes from "prop-types";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { Component, useCallback, useEffect, useRef, useState } from "react";
 import { Bar, Line, Pie } from "react-chartjs-2";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
