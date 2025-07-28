@@ -12,6 +12,13 @@ import pandas as pd
 import numpy as np
 from . import config
 from typing import Any, Dict, List, Optional, Tuple
+import re
+from .graph_utils import (
+    infer_y_axis_column,
+    infer_chart_type,
+    infer_top_n,
+    apply_prompt_filters)
+
 
 # Disable SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -161,29 +168,6 @@ def get_db_connection():
     raise ConnectionError("Unexpected error in get_db_connection")
 from typing import Dict, Any
 
-# def generate_graph_data(prompt: str) -> Dict[str, Any]:
-#     """
-#     This function generates graph data based on a specific user prompt.
-#     It should parse the prompt and return a structured format that the frontend expects.
-#     """
-#     if "monthly pnl" in prompt.lower():
-#         return {
-#             "graph": {
-#                 "type": "bar",
-#                 "title": "Monthly PnL",
-#                 "labels": ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
-#                 "values": [12000, 15000, 13000, 17000, 16000, 18000]
-#             }
-#         }
-#     elif "deal volume" in prompt.lower():
-#         return {
-#                 "type": "bar",
-#                 "title": "Deal Volumes",
-#                 "labels": ["Deal A", "Deal B", "Deal C"],
-#                 "values": [300, 400, 500]
-#             }
-#     else:
-#         raise ValueError("Unable to generate graph data from prompt")
 
 def get_deals_data(query: str = None) -> dict:
     """
@@ -212,7 +196,9 @@ def get_deals_data(query: str = None) -> dict:
         
         # Convert dates to strings for JSON serialization
         if 'latest_trade_date' in df.columns:
-            df['latest_trade_date'] = pd.to_datetime(df['latest_trade_date']).astype(str)
+            #df['latest_trade_date'] = pd.to_datetime(df['latest_trade_date']).astype(str)
+            df['latest_trade_date'] = pd.to_datetime(df['latest_trade_date'], errors='coerce')
+
         
         return {
             "columns": df.columns.tolist(),
@@ -241,19 +227,10 @@ def generate_graph_data(prompt: str) -> Dict[str, Any]:
             }
             
         df = pd.DataFrame(deals_data['data'])
-        
-        # Handle different prompt types
-        if "realized" in prompt.lower():
-            return generate_realized_pnl_graph(df)
-        elif "unrealized" in prompt.lower():
-            return generate_unrealized_pnl_graph(df)
-        elif "trend" in prompt.lower() or "over time" in prompt.lower():
-            return generate_trend_graph(df)
-        elif "compare" in prompt.lower():
-            return generate_comparison_graph(df)
-        else:
-            #return generate_default_graph(df)
-            return generate_default_graph(df, prompt)
+        df = apply_prompt_filters(df, prompt)
+
+        #return generate_default_graph(df)
+        return generate_default_graph(df, prompt)
 
     except Exception as e:
         return {
@@ -288,126 +265,20 @@ def generate_default_graph(df: pd.DataFrame, prompt: str = "") -> Dict[str, Any]
             "error": "Invalid column for Y-axis"
         }
 
-    df = df.sort_values(by=y_column, ascending=False).head(15)
+    #df = df.sort_values(by=y_column, ascending=False).head(15)
+    df = df.sort_values(by=y_column, ascending=False)
+    top_n = infer_top_n(prompt)
+    df = df.sort_values(by=y_column, ascending=False).head(top_n)
 
+    
     return {
         "response": f"Deals graph by {y_column.replace('_', ' ').title()}",
         "graph_data": {
-            "type": "bar",
+            "type": infer_chart_type(prompt),
             "title": f"Top Deals by {y_column.replace('_', ' ').title()}",
             "labels": df['deal_num'].astype(str).tolist(),
             "values": df[y_column].tolist(),
             "dataset_label": y_column.replace('_', ' ').title()
-        }
-    }
-
-
-
-def generate_realized_pnl_graph(df: pd.DataFrame) -> Dict[str, Any]:
-    """Generate bar chart of top deals by realized PnL"""
-    top_deals = df.nlargest(10, 'total_realized_pnl')
-    
-    return {
-        "response": "Top deals by realized PnL",
-        "graph_data": {
-            "type": "bar",
-            "title": "Realized PnL by Deal",
-            "labels": top_deals['deal_num'].astype(str).tolist(),
-            "values": top_deals['total_realized_pnl'].tolist(),
-            "dataset_label": "Realized PnL (USD)"
-        }
-    }
-
-
-def generate_trend_graph(df: pd.DataFrame) -> Dict[str, Any]:
-    """Generate proper time-series line chart from the aggregated data"""
-    try:
-        # Ensure we have the required columns
-        if 'latest_trade_date' not in df.columns:
-            raise ValueError("Missing date column for trend analysis")
-            
-        # Convert and sort by date
-        df['date'] = pd.to_datetime(df['latest_trade_date'])
-        df = df.sort_values('date')
-        
-        # Group by date (daily frequency)
-        df['date_str'] = df['date'].dt.strftime('%Y-%m-%d')
-        grouped = df.groupby('date_str').agg({
-            'total_realized_pnl': 'sum',
-            'total_unrealized_pnl': 'sum',
-            'total_pnl': 'sum'
-        }).reset_index()
-        
-        # Create line chart dataset
-        return {
-            "response": "PnL Trend Over Time",
-            "graph_data": {
-                "type": "line",
-                "title": "Daily PnL Trend",
-                "labels": grouped['date_str'].tolist(),
-                "datasets": [
-                    {
-                        "label": "Realized PnL",
-                        "data": grouped['total_realized_pnl'].tolist(),
-                        "borderColor": "rgba(75, 192, 192, 1)",
-                        "tension": 0.1
-                    },
-                    {
-                        "label": "Total PnL",
-                        "data": grouped['total_pnl'].tolist(),
-                        "borderColor": "rgba(54, 162, 235, 1)",
-                        "tension": 0.1
-                    }
-                ],
-                "options": {
-                    "scales": {
-                        "y": {
-                            "beginAtZero": False,
-                            "title": {
-                                "display": True,
-                                "text": "USD Value"
-                            }
-                        },
-                        "x": {
-                            "title": {
-                                "display": True,
-                                "text": "Trade Date"
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        
-    except Exception as e:
-        return {
-            "response": f"Could not generate trend graph: {str(e)}",
-            "error": str(e)
-        }
-
-
-def generate_comparison_graph(df: pd.DataFrame) -> Dict[str, Any]:
-    """Generate comparison of multiple PnL metrics"""
-    top_deals = df.nlargest(10, 'total_pnl')
-    
-    return {
-        "response": "Comparison of PnL Metrics",
-        "graph_data": {
-            "type": "bar",
-            "title": "PnL Comparison by Deal",
-            "labels": top_deals['deal_num'].astype(str).tolist(),
-            "datasets": [
-                {
-                    "label": "Realized",
-                    "data": top_deals['total_realized_pnl'].tolist(),
-                    "backgroundColor": "rgba(54, 162, 235, 0.7)"
-                },
-                {
-                    "label": "Unrealized",
-                    "data": top_deals['total_unrealized_pnl'].tolist(),
-                    "backgroundColor": "rgba(255, 99, 132, 0.7)"
-                }
-            ]
         }
     }
 
@@ -419,6 +290,13 @@ def get_insights_from_text(text_content: str) -> dict:
         "preview": preview
     }
 
+def infer_top_n(prompt: str, default: int = 10) -> int:
+    match = re.search(r"top\s+(\d+)", prompt.lower())
+    if match:
+        return int(match.group(1))
+    return default
+
+##############################
 # Define a set of callable functions
 user_functions: Set[Callable[..., Any]] = {
     submit_support_ticket, get_deals_data, get_insights_from_text
