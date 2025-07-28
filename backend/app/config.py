@@ -14,11 +14,10 @@ PROJECT_ENDPOINT = os.getenv("PROJECT_ENDPOINT")
 MODEL_DEPLOYMENT_NAME = os.getenv("MODEL_DEPLOYMENT_NAME")
 EIA_API_KEY = os.getenv("EIA_API_KEY")
 
-CHAT_COMPLETIONS_PROJECT_ENDPOINT = os.getenv("CHAT_COMPLETIONS_PROJECT_ENDPOINT")
-CHAT_COMPLETIONS_MODEL_DEPLOYMENT = os.getenv("CHAT_COMPLETIONS_MODEL_DEPLOYMENT")
-CHAT_COMPLETIONS_SUBSCRIPTION_KEY = os.getenv("CHAT_COMPLETIONS_SUBSCRIPTION_KEY")
-CHAT_COMPLETIONS_API_VERSION = os.getenv("CHAT_COMPLETIONS_API_VERSION")
-
+#CHAT_COMPLETIONS_PROJECT_ENDPOINT = os.getenv("CHAT_COMPLETIONS_PROJECT_ENDPOINT")
+#CHAT_COMPLETIONS_MODEL_DEPLOYMENT = os.getenv("CHAT_COMPLETIONS_MODEL_DEPLOYMENT")
+#CHAT_COMPLETIONS_SUBSCRIPTION_KEY = os.getenv("CHAT_COMPLETIONS_SUBSCRIPTION_KEY")
+#CHAT_COMPLETIONS_API_VERSION = os.getenv("CHAT_COMPLETIONS_API_VERSION")
 
 orchestrator_agent_name= "AgentsOrchestrator"
 fornt_office_agent_name = "FrontOfficeAgent"
@@ -32,19 +31,21 @@ middle_office_agent_name = "MiddleOfficeAgent"
 # Always remember and utilize the context of the ongoing conversation and any previously provided information (including uploaded files) when formulating your responses, especially for follow-up questions.
 # Adapt your style based on the provided behavior mode, and always use clear markdown formatting for readability."""
 
-#orchestrator_instruction = "You are a helpful assistant with expertise in gas and oil trading. you are a helpful front office assistant with expertise in gas trading. Use price data, Delta Lake tables, and ICE exchange data to answer queries. Prioritize recent prices, flag anomalies, and summarize trade impact concisely. Use `get_deals_data` when the user asks about deal volumes, prices, trade counts, or PnL. Use `get_ice_data_simulated` when user asks about ICE exchange prices or spot rates. If information is not available, say Data not available."
-#orchestrator_instruction = "You are a helpful assistant with expertise in gas and oil trading. you are a helpful front office assistant with expertise in gas trading. Use price data, Delta Lake tables, and ICE exchange data to answer queries. Prioritize recent prices, flag anomalies, and summarize trade impact concisely." \
-"Use `get_deals_data` when the user asks about deal volumes, prices, trade counts, or PnL. " \
-"Use `generate_deals_chart' when user asks about generating deals graph or chart. " \
-"If information is not available, say Data not available."
 
 orchestrator_instruction = """
 You are a helpful assistant with expertise in gas and oil trading. 
+You are an AI-powered agent for front, middle, and back offices. 
+Your primary goal is to assist users by leveraging available tools and providing structured, concise, and professional responses.
+Your responses are strictly limited by the data accessible through your tools. 
+If a request for detailed information cannot be fully met due to data limitations, clearly state what information is missing and what would be needed to provide a complete answer.
+Always remember and utilize the context of the ongoing conversation and any previously provided information (including uploaded files) when formulating your responses, especially for follow-up questions.
+Adapt your style based on the provided agnet behavior mode, and always use clear markdown formatting for readability.
 
 Key Functions:
 - When the user provides an uploaded file and asks for analysis, summary, or insights from it, you MUST call the 'get_insights_from_text' tool and pass the *entire content of the uploaded file* as the 'text_content' argument to that tool.
 
-- When user ask about deals related question, use `get_deals_data`
+- When user ask about deals related question, use `get_deals_data` 
+- IMPORTANT don't constrcut query your self instead let the function use default config.query
 for example, "what deals do you have', 'what are the available deals', 'show me available deals' 
 
 - When user ask specifically about generating the graph use `generate_graph_data` otherwise don't use this function
@@ -69,11 +70,64 @@ middle_office_instruction = "You are a helpful assistant with expertise in gas a
 back_office_instruction = "You are a helpful assistant with expertise in gas and oil trading. you are a helpful back office assistant with expertise in gas trading. Use price data, Delta Lake tables, and ICE exchange data to answer queries. Prioritize recent prices, flag anomalies, and summarize trade impact concisely. Use `get_deals_data` when the user asks about deal volumes, prices, trade counts, or PnL. Use `get_ice_data_simulated` when user asks about ICE exchange prices or spot rates. If information is not available, say Data not available."
 
 # Define specific instructions for each agent behavior mode
+# agent_behavior_instructions = {
+#     "Short Answer": (
+#         "Respond in 1-2 concise sentences with only the essential information. "
+#         "Avoid elaboration, explanation, or context unless absolutely necessary. "
+#         "Ideal for direct factual answers, numeric summaries, or quick status responses."
+#     ),
+
+#     "Balanced": (
+#         "Provide a clear and efficient answer, blending brevity with essential insights. "
+#         "Use 1-2 short paragraphs to summarize key findings or recommendations. "
+#         "Add light context only if it strengthens understanding or decision-making."
+#     ),
+
+#     "Detailed": (
+#         "Craft a comprehensive response covering the full scope of the request. "
+#         "Break down reasoning, include supporting data where relevant, and explore nuances. "
+#         "Use clear structure (e.g., paragraphs, bullet points) to guide the reader through the analysis. "
+#         "Ideal for analysis-heavy tasks, breakdowns, or scenario evaluations."
+#     ),
+
+#     "Structured": (
+#         "Organize the response in a well-structured, professional format using markdown syntax. "
+#         "Start with a brief summary, then use clear section headers (## or ###), bullet points, and numbered lists. "
+#         "Where appropriate, separate assumptions, findings, and recommendations. "
+#         "Emphasize readability, clarity, and logical progression. "
+#         "Ideal for reports, comparisons, walkthroughs, or knowledge-base entries."
+#     )
+# }
+
+# agent_behavior_instructions = {
+#     "Short Answer": "Give a very brief and to-the-point answer",
+#     "Balanced": "Answer clearly and concisely with key insights.",
+#     "Detailed": "Provide a comprehensive and detailed analysis with all supporting reasoning.",
+#     "Structured": "Provide your answer in a highly structured format, using markdown headings, bullet points, and numbered lists where appropriate to organize information clearly."
+# }
+
 agent_behavior_instructions = {
-    "Short Answer": "Give a very brief and to-the-point answer.",
-    "Balanced": "Answer clearly and concisely with key insights.",
-    "Detailed": "Provide a comprehensive and detailed analysis with all supporting reasoning.",
-    "Structured": "Provide your answer in a highly structured format, using markdown headings, bullet points, and numbered lists where appropriate to organize information clearly."
+    "Short Answer": (
+        "Respond with a brief and direct answer, no more than 2-3 sentences. "
+        "Avoid unnecessary details, examples, or elaboration. Ideal for quick factual replies or high-level summaries."
+    ),
+    
+    "Balanced": (
+        "Provide a clear and concise response that addresses the core of the question while including key insights. "
+        "Limit to 1-2 paragraphs. Avoid over-explaining, but ensure important points are covered to support user understanding."
+    ),
+
+    "Detailed": (
+        "Deliver an in-depth and thorough explanation, covering all relevant aspects of the topic. "
+        "Use examples, step-by-step reasoning, and technical clarity where applicable. Ideal for exploratory or analytical queries. "
+        "The response can be several paragraphs if needed to fully address the question."
+    ),
+
+    "Structured": (
+        "Present the answer in a clearly organized, structured format. Use markdown syntax with appropriate sections, "
+        "headings, bullet points, and numbered lists. Ensure logical flow and high readability. "
+        "Summarize key takeaways at the end if applicable."
+    )
 }
 
 

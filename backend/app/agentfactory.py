@@ -1,4 +1,4 @@
-#agentfactory.jsx
+#agentfactory.py
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 from azure.identity import DefaultAzureCredential
@@ -6,11 +6,10 @@ from azure.ai.agents import AgentsClient
 from azure.ai.agents.models import FunctionTool, ToolSet, ListSortOrder, MessageRole
 from .tools import user_functions 
 from .config import PROJECT_ENDPOINT, MODEL_DEPLOYMENT_NAME
-from .config import orchestrator_agent_name, orchestrator_instruction
+from .config import orchestrator_agent_name, orchestrator_instruction, agent_behavior_instructions
 from .tools import generate_graph_data, user_functions
 import traceback
 
-@dataclass
 @dataclass
 class AgentResponse:
     response: str
@@ -66,7 +65,9 @@ class AgentFactory:
             model=MODEL_DEPLOYMENT_NAME,
             name=orchestrator_agent_name,
             instructions=orchestrator_instruction,
-            toolset=toolset
+            toolset=toolset,
+            top_p=0.01,
+            temperature=1.0
         )
 
         print(f"Agent created: {self.agent.name} ({self.agent.id})")
@@ -97,25 +98,56 @@ class AgentFactory:
             thread = self.agent_client.threads.get(thread_id) if thread_id else self.agent_client.threads.create()
             print(f"Using thread ID: {thread.id}")
 
+            behavior_instruction = agent_behavior_instructions.get(agent_mode, "")
+    
+            # Combine base orchestrator instructions with behavior instructions
+            full_instruction = f"{orchestrator_instruction}\n\nBehavior mode instructions:\n{behavior_instruction}"
+
+            # Prepare message content to send to the agent
+            user_message_content = prompt
+            
             # Compose final user message content
             if file_content:
                 # According to your config, the agent must call 'get_insights_from_text' tool with entire file content
                 # So, you can append file content with prompt or instruct the agent to use the tool
                 # One approach: add the file content in the prompt with a special delimiter
-                combined_content = f"{prompt}\n\n[FILE_CONTENT_START]\n{file_content}\n[FILE_CONTENT_END]"
-            else:
-                combined_content = prompt
+                #combined_content = f"{prompt}\n\n[FILE_CONTENT_START]\n{file_content}\n[FILE_CONTENT_END]"
+                user_message_content += f"\n\n[FILE_CONTENT_START]\n{file_content}\n[FILE_CONTENT_END]"
 
+            # Prepare the list of messages for chat history, include system instructions as the first message
+            messages_to_send = []
+            # System message: give instructions including behavior mode
+            messages_to_send.append({
+                "role": "system",
+                "content": full_instruction
+            })    
+
+            # Add chat history if any
+            if chat_history:
+                for msg in chat_history:
+                    messages_to_send.append(msg)
+
+            # Append current user message
+            messages_to_send.append({
+                "role": "user",
+                "content": user_message_content
+            })    
+            
+            agent_id = self.get_or_create_agent()
+            thread = self.agent_client.threads.get(thread_id) if thread_id else self.agent_client.threads.create()
+            print(f"Using thread ID: {thread.id}")
+            
             message = self.agent_client.messages.create(
                 thread_id=thread.id,
                 role="user",
-                content=combined_content
+                content=user_message_content
             )
-
+            
             run = self.agent_client.runs.create_and_process(thread_id=thread.id, agent_id=agent_id)
 
             prompt_tokens = run.usage.prompt_tokens or 0
             completion_tokens = run.usage.completion_tokens or 0
+            
 
             if run.status == "failed":
                 print(f"Run failed: {run.last_error}")
