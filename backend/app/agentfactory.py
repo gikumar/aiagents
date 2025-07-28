@@ -4,11 +4,12 @@ from typing import Any, Dict, List, Optional, Tuple
 from azure.identity import DefaultAzureCredential
 from azure.ai.agents import AgentsClient
 from azure.ai.agents.models import FunctionTool, ToolSet, ListSortOrder, MessageRole
-from .tools import user_functions 
 from .config import PROJECT_ENDPOINT, MODEL_DEPLOYMENT_NAME
 from .config import orchestrator_agent_name, orchestrator_instruction, agent_behavior_instructions
 from .tools import generate_graph_data, user_functions
+
 import traceback
+import json
 
 @dataclass
 class AgentResponse:
@@ -40,42 +41,40 @@ class AgentFactory:
                 exclude_managed_identity_credential=True
             )
         )
-        self.toolset = ToolSet()
-        self.toolset.add(FunctionTool(user_functions))
-        self.agent_client.enable_auto_function_calls(self.toolset)
+        # self.toolset = ToolSet()
+        # self.toolset.add(FunctionTool(user_functions))
+        # self.agent_client.enable_auto_function_calls(self.toolset)
 
+    
+    # get_or_create_agent
     def get_or_create_agent(self) -> str:
         """Reuse the same agent if created; otherwise, create it."""
 
         if self.agent:
             return self.agent.id
 
-        # Combine all functions into a single set, including generate_graph_data
-        all_functions = set(user_functions)
-        all_functions.add(generate_graph_data)
+        self.toolset = ToolSet()
 
-        combined_tool = FunctionTool(functions=all_functions)
-
-        toolset = ToolSet()
-        toolset.add(combined_tool)
-
-        self.agent_client.enable_auto_function_calls(toolset)
+        tool_functions = list(user_functions) + [generate_graph_data]
+        self.toolset.add(FunctionTool(tool_functions))
+                
+        self.agent_client.enable_auto_function_calls(self.toolset)
 
         self.agent = self.agent_client.create_agent(
             model=MODEL_DEPLOYMENT_NAME,
             name=orchestrator_agent_name,
             instructions=orchestrator_instruction,
-            toolset=toolset,
+            toolset=self.toolset,
             top_p=0.01,
-            temperature=1.0
+            temperature=0.99
         )
 
         print(f"Agent created: {self.agent.name} ({self.agent.id})")
         return self.agent.id
 
-    def run_tool(tool_name: str, args: dict) -> str:
+    def run_tool(self, tool_name: str, args: dict) -> str:
         """Dynamically runs the correct function tool from the toolset based on name."""
-        for tool in toolset._tools:  # Accessing the actual FunctionTool instances
+        for tool in self.toolset._tools:  # Accessing the actual FunctionTool instances
             if hasattr(tool, "functions"):
                 for fn in tool.functions:
                     if fn.__name__ == tool_name:
@@ -89,19 +88,35 @@ class AgentFactory:
     agent_mode: str = "Balanced",
     file_content: Optional[str] = None,
     chat_history: Optional[list] = None,
-    is_graph_request: bool = False,
-    graph_type: str = "bar",
-    thread_id: Optional[str] = None
+    thread_id: Optional[str] = None,
 ) -> AgentResponse:
         try:
             agent_id = self.get_or_create_agent()
             thread = self.agent_client.threads.get(thread_id) if thread_id else self.agent_client.threads.create()
             print(f"Using thread ID: {thread.id}")
+            
 
             behavior_instruction = agent_behavior_instructions.get(agent_mode, "")
+
+            if not behavior_instruction:
+                print(f"Warning: Unknown agent_mode '{agent_mode}', defaulting to basic instructions")
     
             # Combine base orchestrator instructions with behavior instructions
-            full_instruction = f"{orchestrator_instruction}\n\nBehavior mode instructions:\n{behavior_instruction}"
+            #full_instruction = f"{orchestrator_instruction}\n\nBehavior mode instructions:\n{behavior_instruction}"
+            full_instruction = f"""
+                [Orchestrator Instructions]
+                {orchestrator_instruction}
+
+                [Behavior Instructions - Mode: {agent_mode}]
+                {behavior_instruction}
+                """.strip()
+
+            if not thread_id:
+                self.agent_client.messages.create(
+                    thread_id=thread.id,
+                    role="assistant",
+                    content=full_instruction
+                )
 
             # Prepare message content to send to the agent
             user_message_content = prompt
@@ -113,36 +128,27 @@ class AgentFactory:
                 # One approach: add the file content in the prompt with a special delimiter
                 #combined_content = f"{prompt}\n\n[FILE_CONTENT_START]\n{file_content}\n[FILE_CONTENT_END]"
                 user_message_content += f"\n\n[FILE_CONTENT_START]\n{file_content}\n[FILE_CONTENT_END]"
-
-            # Prepare the list of messages for chat history, include system instructions as the first message
-            messages_to_send = []
-            # System message: give instructions including behavior mode
-            messages_to_send.append({
-                "role": "system",
-                "content": full_instruction
-            })    
-
-            # Add chat history if any
+                  
             if chat_history:
                 for msg in chat_history:
-                    messages_to_send.append(msg)
+                    role = msg["role"]
+                    if role == "agent":
+                        role = "assistant"  # Azure expects 'assistant'
+                    elif role not in {"user", "assistant"}:
+                        print(f"Warning: Unsupported role '{role}', defaulting to 'user'")
+                        role = "user"
+                    self.agent_client.messages.create(
+                        thread_id=thread.id,
+                        role=role,
+                        content=msg["content"]
+                    )
 
-            # Append current user message
-            messages_to_send.append({
-                "role": "user",
-                "content": user_message_content
-            })    
-            
-            agent_id = self.get_or_create_agent()
-            thread = self.agent_client.threads.get(thread_id) if thread_id else self.agent_client.threads.create()
-            print(f"Using thread ID: {thread.id}")
-            
-            message = self.agent_client.messages.create(
+            # Send current user message
+            self.agent_client.messages.create(
                 thread_id=thread.id,
                 role="user",
                 content=user_message_content
-            )
-            
+            ) 
             run = self.agent_client.runs.create_and_process(thread_id=thread.id, agent_id=agent_id)
 
             prompt_tokens = run.usage.prompt_tokens or 0

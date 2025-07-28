@@ -52,8 +52,6 @@ class AskRequest(BaseModel):
     prompt: str
     file_content: Optional[str] = None
     chat_history: Optional[List[Message]] = None
-    is_graph_request: Optional[bool] = False
-    graph_type: Optional[str] = "bar"
 
 class AskResponse(BaseModel):
     response: str
@@ -91,9 +89,7 @@ async def ask_agent(request: AskRequest):
             prompt=request.prompt,
             agent_mode=request.agentMode,
             file_content=request.file_content,
-            chat_history=formatted_history,
-            is_graph_request=request.is_graph_request,
-            graph_type=request.graph_type
+            chat_history=formatted_history
         )
         
         return {
