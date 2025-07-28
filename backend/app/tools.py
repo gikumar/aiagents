@@ -252,7 +252,8 @@ def generate_graph_data(prompt: str) -> Dict[str, Any]:
         elif "compare" in prompt.lower():
             return generate_comparison_graph(df)
         else:
-            return generate_default_graph(df)
+            #return generate_default_graph(df)
+            return generate_default_graph(df, prompt)
 
     except Exception as e:
         return {
@@ -260,20 +261,46 @@ def generate_graph_data(prompt: str) -> Dict[str, Any]:
             "error": str(e)
         }
 
-def generate_default_graph(df: pd.DataFrame) -> Dict[str, Any]:
-    """Fallback bar chart using total PnL"""
-    top_deals = df.nlargest(5, 'total_pnl')
+def generate_default_graph(df: pd.DataFrame, prompt: str = "") -> Dict[str, Any]:
+    """
+    Generate a default graph based on deal_num on x-axis and a dynamically chosen y-axis column from prompt.
+    """
+    y_axis_candidates = {
+        "realized": "total_realized_pnl",
+        "unrealized": "total_unrealized_pnl",
+        "pnl": "total_pnl",
+        "quantity": "total_quantity",
+        "price": "avg_price",
+        "payment": "total_payment_value",
+        "cashflow": "cashflow_type_count",
+        "count": "transaction_count"
+    }
+
+    y_column = "total_realized_pnl"  # default fallback
+    for keyword, column in y_axis_candidates.items():
+        if keyword in prompt.lower() and column in df.columns:
+            y_column = column
+            break
+
+    if y_column not in df.columns:
+        return {
+            "response": f"Column '{y_column}' not found in data",
+            "error": "Invalid column for Y-axis"
+        }
+
+    df = df.sort_values(by=y_column, ascending=False).head(15)
 
     return {
-        "response": "Default graph: Top deals by Total PnL",
+        "response": f"Deals graph by {y_column.replace('_', ' ').title()}",
         "graph_data": {
             "type": "bar",
-            "title": "Top Deals by Total PnL",
-            "labels": top_deals['deal_num'].astype(str).tolist(),
-            "values": top_deals['total_pnl'].tolist(),
-            "dataset_label": "Total PnL (USD)"
+            "title": f"Top Deals by {y_column.replace('_', ' ').title()}",
+            "labels": df['deal_num'].astype(str).tolist(),
+            "values": df[y_column].tolist(),
+            "dataset_label": y_column.replace('_', ' ').title()
         }
     }
+
 
 
 def generate_realized_pnl_graph(df: pd.DataFrame) -> Dict[str, Any]:
