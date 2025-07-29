@@ -124,7 +124,7 @@ class AgentFactory:
             user_message_content = prompt
             if self.is_graph_prompt(prompt):
                 user_message_content = "[Trigger generate_graph_data tool]\n" + user_message_content
-
+            
             if file_content:
                 user_message_content += f"\n\n[FILE_CONTENT_START]\n{file_content}\n[FILE_CONTENT_END]"
 
@@ -220,6 +220,11 @@ class AgentFactory:
         prompt_lower = prompt.lower()
         return any(keyword in prompt_lower for keyword in graph_keywords)
     
+    @staticmethod
+    def is_pie_chart_prompt(prompt: str) -> bool:
+        pie_keywords = ["pie chart", "distribution", "share", "percentage", "proportion"]
+        prompt_lower = prompt.lower()
+        return any(keyword in prompt_lower for keyword in pie_keywords)
 
 
     def delete_old_threads(self, keep_last_n: int = 10):

@@ -1,5 +1,8 @@
+#graph_utils.py
 import pandas as pd
 import re
+from datetime import datetime, timedelta
+from . import config
 
 def infer_y_axis_column(prompt: str, df: pd.DataFrame) -> str:
     prompt_lower = prompt.lower()
@@ -11,7 +14,11 @@ def infer_y_axis_column(prompt: str, df: pd.DataFrame) -> str:
 def infer_chart_type(prompt: str) -> str:
     if "line" in prompt.lower():
         return "line"
-    return "bar"
+    elif "pie" in prompt.lower():
+        return "pie"
+    else: 
+        return "bar"
+    
 
 def infer_top_n(prompt: str, default: int = 10) -> int:
     match = re.search(r"top\s+(\d+)", prompt.lower())
@@ -41,3 +48,55 @@ def apply_prompt_filters(df: pd.DataFrame, prompt: str) -> pd.DataFrame:
         df = df[df['latest_trade_date'].dt.year == 2025]
 
     return df
+
+# Parse common natural language time filters from the prompt
+def apply_time_filter(df, prompt):
+    now = datetime.now()
+
+    # Ensure latest_trade_date is datetime
+    if 'latest_trade_date' not in df.columns:
+        return df
+
+    df = df.copy()
+
+    # Filter for "last month"
+    if re.search(r'\blast month\b', prompt, re.IGNORECASE):
+        first_day_of_current_month = now.replace(day=1)
+        last_month_end = first_day_of_current_month - timedelta(days=1)
+        last_month_start = last_month_end.replace(day=1)
+        return df[(df['latest_trade_date'] >= last_month_start) & (df['latest_trade_date'] <= last_month_end)]
+
+    # Filter for specific month like "July"
+    match = re.search(r'\b(January|February|March|April|May|June|July|August|September|October|November|December)\b', prompt, re.IGNORECASE)
+    if match:
+        month_str = match.group(1)
+        month_number = datetime.strptime(month_str, "%B").month
+        return df[df['latest_trade_date'].dt.month == month_number]
+
+    # Filter for "Q1", "Q2", "Q3", "Q4"
+    match = re.search(r'\bQ([1-4])\b', prompt, re.IGNORECASE)
+    if match:
+        quarter = int(match.group(1))
+        start_month = 3 * (quarter - 1) + 1
+        end_month = start_month + 2
+        return df[df['latest_trade_date'].dt.month.isin(range(start_month, end_month + 1))]
+
+    # Default: no filter
+    return df
+
+
+def prompt_to_sql(prompt: str) -> str:
+    prompt = prompt.lower()
+
+    # Default query
+    base_query = config.graphquery
+
+    if "top 3" in prompt:
+        base_query += " LIMIT 3"
+    elif "top 5" in prompt:
+        base_query += " LIMIT 5"
+    elif "top 10" in prompt:
+        base_query += " LIMIT 10"
+
+    print(base_query)
+    return base_query
