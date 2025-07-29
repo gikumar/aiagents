@@ -817,3 +817,8 @@ body {
     width: 100%;
   }
 }
+
+.icon-small {
+  width: 20px;
+  height: 20px;
+}
