@@ -154,19 +154,19 @@ class AgentFactory:
             if file_content:
                 user_message_content += f"\n\n[FILE_CONTENT_START]\n{file_content}\n[FILE_CONTENT_END]"
 
-            if chat_history:
-                for msg in chat_history:
-                    role = msg["role"]
-                    if role == "agent":
-                        role = "assistant"
-                    elif role not in {"user", "assistant"}:
-                        print(f"Warning: Unsupported role '{role}', defaulting to 'user'")
-                        role = "user"
-                    self.agent_client.messages.create(
-                        thread_id=thread.id,
-                        role=role,
-                        content=msg["content"]
-                    )
+            # if chat_history:
+            #     for msg in chat_history:
+            #         role = msg["role"]
+            #         if role == "agent":
+            #             role = "assistant"
+            #         elif role not in {"user", "assistant"}:
+            #             print(f"Warning: Unsupported role '{role}', defaulting to 'user'")
+            #             role = "user"
+            #         self.agent_client.messages.create(
+            #             thread_id=thread.id,
+            #             role=role,
+            #             content=msg["content"]
+            #         )
 
             # Send the user's message
             self.agent_client.messages.create(

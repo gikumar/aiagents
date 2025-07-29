@@ -197,7 +197,7 @@ LEFT JOIN trade_catalog.poc_schema.entity_pnl_detail pd
   AND hl.deal_leg = pd.deal_leg
   AND tp.profile_id = pd.profile_seq_num
 GROUP BY hl.deal_num
-ORDER BY hl.deal_num;
+ORDER BY hl.deal_num
 """
 
 query = f"""
