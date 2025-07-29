@@ -41,6 +41,7 @@ class AgentFactory:
                 exclude_managed_identity_credential=True
             )
         )
+        self.current_thread = None
         # self.toolset = ToolSet()
         # self.toolset.add(FunctionTool(user_functions))
         # self.agent_client.enable_auto_function_calls(self.toolset)
@@ -50,22 +51,37 @@ class AgentFactory:
     def get_or_create_agent(self) -> str:
         """Deletes any previously created agent with the same name, then creates a new one."""
 
-        self.delete_old_threads(keep_last_n=10)
-        
-        # Step 1: List and delete any agents with the same name
-        existing_agents = list(self.agent_client.list_agents())
+        """
+        Returns the existing agent ID if available, otherwise creates one.
+        Avoids deleting and recreating the agent on every call.
+        """
+        if self.agent is not None:
+            return self.agent.id  # Already initialized
+
+        # Check if agent with desired name already exists
+        existing_agents = list(self.agent_client.list_agents())  
+          
         for agent in existing_agents:
             if agent.name == orchestrator_agent_name:
-                print(f"Deleting old agent with name '{agent.name}' and ID '{agent.id}'")
-                self.agent_client.delete_agent(agent.id)
-        
-        # Step 2: Recreate the toolset
+                print(f"Reusing existing agent: {agent.name} ({agent.id})")
+                
+                # Set toolset again (required for auto function call)
+                self.toolset = ToolSet()
+                tool_functions = list(user_functions) + [generate_graph_data]
+                self.toolset.add(FunctionTool(tool_functions))
+                self.agent_client.enable_auto_function_calls(self.toolset)
+
+                self.agent = agent
+                return self.agent.id
+
+        # No existing agent found — create a new one
+        print(f"No existing agent found, creating a new one: {orchestrator_agent_name}")
+    
         self.toolset = ToolSet()
         tool_functions = list(user_functions) + [generate_graph_data]
         self.toolset.add(FunctionTool(tool_functions))
         self.agent_client.enable_auto_function_calls(self.toolset)
 
-        # Step 3: Create new agent
         self.agent = self.agent_client.create_agent(
             model=MODEL_DEPLOYMENT_NAME,
             name=orchestrator_agent_name,
@@ -75,8 +91,9 @@ class AgentFactory:
             temperature=0.99
         )
 
-        print(f"✅ Agent created: {self.agent.name} ({self.agent.id})")
+        print(f"New agent created: {self.agent.name} ({self.agent.id})")
         return self.agent.id
+    
 
     def run_tool(self, tool_name: str, args: dict) -> str:
         """Dynamically runs the correct function tool from the toolset based on name."""
@@ -98,8 +115,17 @@ class AgentFactory:
     ) -> AgentResponse:
         try:
             agent_id = self.get_or_create_agent()
-            thread = self.agent_client.threads.get(thread_id) if thread_id else self.agent_client.threads.create()
-            print(f"Using thread ID: {thread.id}")
+
+            # REUSE THREAD LOGIC
+            if thread_id:
+                thread = self.agent_client.threads.get(thread_id)
+            elif self.current_thread:
+                thread = self.current_thread
+                print(f"Reusing thread ID: {thread.id}")
+            else:
+                thread = self.agent_client.threads.create()
+                self.current_thread = thread
+                print(f"Creating new thread ID: {thread.id}")
 
             behavior_instruction = agent_behavior_instructions.get(agent_mode, "")
             if not behavior_instruction:

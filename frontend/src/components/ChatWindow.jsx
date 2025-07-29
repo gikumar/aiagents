@@ -209,7 +209,7 @@ const ChatWindow = () => {
       data: {
         labels: graphData.labels || [],
         datasets: [{
-          label: graphData.title || 'Deals Data',
+          label: graphData.dataset_label || 'Deals Data',
           data: graphData.values || [],
           backgroundColor: theme === 'dark' ? 'rgba(129, 199, 132, 0.7)' : 'rgba(54, 162, 235, 0.7)',
           borderColor: theme === 'dark' ? 'rgba(129, 199, 132, 1)' : 'rgba(54, 162, 235, 1)',
