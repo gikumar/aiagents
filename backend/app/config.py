@@ -146,8 +146,8 @@ WITH header_leg AS (
     l.proj_curve,
     l.settlement_type AS leg_settlement_type,
     l.quantity_type
-  FROM trade_catalog.poc_schema.entity_trade_header h
-  LEFT JOIN trade_catalog.poc_schema.entity_trade_leg l
+  FROM trade_catalog.trade_schema.entity_trade_header h
+  LEFT JOIN trade_catalog.trade_schema.entity_trade_leg l
     ON h.deal_num = l.deal_num
     AND h.tran_num = l.tran_num
 ),
@@ -164,7 +164,7 @@ trade_profile AS (
     p.notional_volume,
     p.reval_type AS profile_reval_type,
     p.eod_date AS profile_eod_date
-  FROM trade_catalog.poc_schema.entity_trade_profile p
+  FROM trade_catalog.trade_schema.entity_trade_profile p
 )
 
 SELECT
@@ -191,13 +191,17 @@ LEFT JOIN trade_profile tp
   ON hl.deal_num = tp.deal_num
   AND hl.tran_num = tp.tran_num
   AND hl.deal_leg = tp.deal_leg
-LEFT JOIN trade_catalog.poc_schema.entity_pnl_detail pd
+LEFT JOIN trade_catalog.trade_schema.entity_pnl_detail pd
   ON hl.deal_num = pd.deal_num
   AND hl.tran_num = pd.tran_num
   AND hl.deal_leg = pd.deal_leg
   AND tp.profile_id = pd.profile_seq_num
 GROUP BY hl.deal_num
-ORDER BY hl.deal_num
+HAVING 
+  total_realized_pnl IS NOT NULL
+  AND total_unrealized_pnl IS NOT NULL
+  AND SUM(pd.ltd_realized_value) != 0
+ORDER BY total_realized_pnl ASC
 """
 
 query = f"""
@@ -224,8 +228,8 @@ WITH header_leg AS (
     l.proj_curve,
     l.settlement_type AS leg_settlement_type,
     l.quantity_type -- Using quantity_type from leg instead of quantity
-  FROM trade_catalog.poc_schema.entity_trade_header h
-  LEFT JOIN trade_catalog.poc_schema.entity_trade_leg l
+  FROM trade_catalog.trade_schema.entity_trade_header h
+  LEFT JOIN trade_catalog.trade_schema.entity_trade_leg l
     ON h.deal_num = l.deal_num
     AND h.tran_num = l.tran_num
 ),
@@ -242,7 +246,7 @@ trade_profile AS (
     p.notional_volume,
     p.reval_type AS profile_reval_type,
     p.eod_date AS profile_eod_date
-  FROM trade_catalog.poc_schema.entity_trade_profile p
+  FROM trade_catalog.trade_schema.entity_trade_profile p
 )
 
 SELECT
@@ -291,9 +295,11 @@ LEFT JOIN trade_profile tp
   ON hl.deal_num = tp.deal_num
   AND hl.tran_num = tp.tran_num
   AND hl.deal_leg = tp.deal_leg
-LEFT JOIN trade_catalog.poc_schema.entity_pnl_detail pd
+LEFT JOIN trade_catalog.trade_schema.entity_pnl_detail pd
   ON hl.deal_num = pd.deal_num
   AND hl.tran_num = pd.tran_num
   AND hl.deal_leg = pd.deal_leg
   AND tp.profile_id = pd.profile_seq_num
+  where ltd_realized_value IS NOT NULL and ltd_unrealized_value IS NOT NULL and ltd_realized_value != 0
+  Limit 50
 """

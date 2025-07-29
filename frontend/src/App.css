@@ -480,7 +480,7 @@ body {
 }
 
 .chartjs-render-monitor {
-  width: 100% !important;
+  width: 200% !important;
   height: 100% !important;
   min-height: 200px;
   max-height: 300px;
