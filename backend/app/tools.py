@@ -157,7 +157,6 @@ def infer_top_n(prompt: str, default: int = 10) -> int:
     return int(match.group(1)) if match else default
 
 # Default graph generation
-
 def generate_default_graph(df: pd.DataFrame, prompt: str = "") -> Dict[str, Any]:
     y_axis_candidates = {
         "realized": "total_realized_pnl",
@@ -177,11 +176,15 @@ def generate_default_graph(df: pd.DataFrame, prompt: str = "") -> Dict[str, Any]
             break
 
     if y_col not in df.columns:
-        return {"response": f"Column '{y_col}' not found in data", "error": "Invalid column for Y-axis"}
+        return {
+            "response": f"Column '{y_col}' not found in data",
+            "error": "Invalid column for Y-axis"
+        }
 
     chart_type = infer_chart_type(prompt)
     dataset_label = y_col.replace("_", " ").title()
 
+    # Determine x-axis or pie labels
     x_col = "deal_num"
     for candidate in ['counterparty', 'trader', 'deal_type', 'instrument_type']:
         if candidate in prompt.lower() and candidate in df.columns:
@@ -194,8 +197,20 @@ def generate_default_graph(df: pd.DataFrame, prompt: str = "") -> Dict[str, Any]
     top_n = infer_top_n(prompt)
 
     if chart_type == "pie":
+        if x_col not in df.columns:
+            return {
+                "response": f"Cannot generate pie chart: column '{x_col}' not found.",
+                "error": f"Missing column '{x_col}' for pie chart labels"
+            }
+
         pie_df = df.groupby(x_col, as_index=False)[y_col].sum()
         pie_df = pie_df.sort_values(by=y_col, ascending=False).head(top_n)
+
+        colors = [
+            "#FF6384", "#36A2EB", "#FFCE56", "#4BC0C0", "#9966FF",
+            "#FF9F40", "#E7E9ED", "#76A346", "#D9534F", "#5BC0DE"
+        ]
+
         return {
             "response": f"{dataset_label} by {x_col.title()}",
             "graph_data": {
@@ -203,10 +218,12 @@ def generate_default_graph(df: pd.DataFrame, prompt: str = "") -> Dict[str, Any]
                 "title": f"{dataset_label} by {x_col.title()}",
                 "labels": pie_df[x_col].astype(str).tolist(),
                 "values": pie_df[y_col].tolist(),
+                "backgroundColor": colors[:len(pie_df)],
                 "dataset_label": dataset_label
             }
         }
 
+    # Non-pie charts (bar/line)
     df = df.sort_values(by=y_col, ascending=False).head(top_n)
     return {
         "response": f"{dataset_label} by {x_col.title()}",
@@ -218,3 +235,6 @@ def generate_default_graph(df: pd.DataFrame, prompt: str = "") -> Dict[str, Any]
             "dataset_label": dataset_label
         }
     }
+
+
+
