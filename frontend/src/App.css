@@ -61,9 +61,9 @@ body {
 
 /* ===== SIDEBAR ===== */
 .sidebar {
-  width: 350px;
-  min-width: 250px;
-  max-width: 500px;
+  width: 250px;
+  min-width: 100px;
+  max-width: 250px;
   background-color: var(--color-bg-secondary);
   border-right: 1px solid var(--color-border);
   padding: 30px 25px;
@@ -330,7 +330,7 @@ body {
 }
 
 .main-chat-header {
-  padding: 1.5rem 1rem;
+  padding: 1.rem 1rem;
   margin-bottom: 0.1rem;
   text-align: center;
   background-color: var(--color-bg);
@@ -339,7 +339,7 @@ body {
 }
 
 .welcome-title {
-  font-size: 2.5em;
+  font-size: 2.0em;
   font-weight: 800;
   color: var(--color-text);
   margin: 0 0 15px;

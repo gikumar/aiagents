@@ -606,31 +606,7 @@ const ChatWindow = () => {
 
         <div className="input-area">
           <form onSubmit={handleSubmit} className="input-form">
-            <input
-              type="file"
-              className="file-input"
-              ref={fileInputRef}
-              onChange={handleFileUpload}
-              accept=".txt,.md,.csv,.json,.log"
-              style={{ display: 'none' }}
-            />
-            {uploadedFile && (
-              <div className="file-context-display">
-                <span className="file-name-tag">
-                  <span className="file-icon">📄</span> {uploadedFile.name}
-                </span>
-                {uploadedFile.isLoading && <FileLoadingIndicator />}
-                {!uploadedFile.isLoading && (
-                  <button
-                    onClick={handleClearFile}
-                    className="clear-file-button"
-                    title="Clear uploaded file"
-                  >
-                    <XCircleIcon />
-                  </button>
-                )}
-              </div>
-            )}
+            
             <div className="input-row">
               <button
                 type="button"
