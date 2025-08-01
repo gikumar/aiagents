@@ -84,21 +84,3 @@ def apply_time_filter(df, prompt):
     # Default: no filter
     return df
 
-
-def prompt_to_sql(prompt: str) -> str:
-    prompt = prompt.lower()
-
-    # Default query
-    base_query = config.graphquery
-
-    if "top 3" in prompt:
-        base_query += " LIMIT 3;"
-    elif "top 5" in prompt:
-        base_query += " LIMIT 5;"
-    elif "top 10" in prompt:
-        base_query += " LIMIT 10;"
-    else:    
-        base_query += ";"
-
-    print(base_query)
-    return base_query

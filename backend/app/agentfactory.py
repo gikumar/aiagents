@@ -1,12 +1,14 @@
-#//backedn/app/agentfactory.py
+# backend/app/agentfactory.py
+
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 from azure.identity import DefaultAzureCredential
 from azure.ai.agents import AgentsClient
 from azure.ai.agents.models import FunctionTool, ToolSet, ListSortOrder, MessageRole
-from .config import PROJECT_ENDPOINT, MODEL_DEPLOYMENT_NAME
-from .config import orchestrator_agent_name, orchestrator_instruction, agent_behavior_instructions
-from .tools import generate_graph_data, user_functions
+# Make sure to import all relevant config variables and tools
+from .config import PROJECT_ENDPOINT, MODEL_DEPLOYMENT_NAME, orchestrator_agent_name, orchestrator_instruction, agent_behavior_instructions
+# NEW: Ensure all desired tools are imported here
+from .tools import generate_graph_data, user_functions, execute_databricks_query, get_insights_from_text # <--- ADDED get_insights_from_text
 
 import traceback
 import json
@@ -42,21 +44,38 @@ class AgentFactory:
             )
         )
         self.current_thread = None
-        # self.toolset = ToolSet()
-        # self.toolset.add(FunctionTool(user_functions))
-        # self.agent_client.enable_auto_function_calls(self.toolset)
 
 
     #get or create the agent.
     def get_or_create_agent(self) -> str:
-        """Deletes any previously created agent with the same name, then creates a new one."""
-
         """
         Returns the existing agent ID if available, otherwise creates one.
         Avoids deleting and recreating the agent on every call.
         """
         if self.agent is not None:
             return self.agent.id  # Already initialized
+
+        # Define the tools to be added.
+        # These must be the actual function objects.
+        # user_functions, if it contains callable functions, should be unpacked or iterated.
+        # For simplicity, let's explicitly list the functions from tools.py that are actual tools.
+        
+        # Define a list of actual callable functions (tools)
+        # Ensure generate_graph_data is not None if you intend to use it.
+        # If user_functions contains actual callable functions, iterate its values.
+        
+        # Correctly assemble the list of tools to register
+        # Only include functions that are actually meant to be called by the agent.
+        # user_functions as an empty dict means it provides no tools directly.
+        
+        registered_tools = [
+            execute_databricks_query,
+            get_insights_from_text,
+            # Conditionally add generate_graph_data if it's not None (meaning it was imported successfully)
+            *([] if generate_graph_data is None else [generate_graph_data]),
+            # If user_functions contains callable tools, add them like this:
+            # *[f for f in user_functions.values() if callable(f)],
+        ]
 
         # Check if agent with desired name already exists
         existing_agents = list(self.agent_client.list_agents())  
@@ -67,8 +86,9 @@ class AgentFactory:
                 
                 # Set toolset again (required for auto function call)
                 self.toolset = ToolSet()
-                tool_functions = list(user_functions) + [generate_graph_data]
-                self.toolset.add(FunctionTool(tool_functions))
+                # NOW ADD THE ACTUAL FUNCTION OBJECTS
+                self.toolset.add(FunctionTool(registered_tools)) # <--- CORRECTED LINE
+
                 self.agent_client.enable_auto_function_calls(self.toolset)
 
                 self.agent = agent
@@ -78,17 +98,18 @@ class AgentFactory:
         print(f"No existing agent found, creating a new one: {orchestrator_agent_name}")
     
         self.toolset = ToolSet()
-        tool_functions = list(user_functions) + [generate_graph_data]
-        self.toolset.add(FunctionTool(tool_functions))
+        # NOW ADD THE ACTUAL FUNCTION OBJECTS
+        self.toolset.add(FunctionTool(registered_tools)) # <--- CORRECTED LINE
+
         self.agent_client.enable_auto_function_calls(self.toolset)
 
         self.agent = self.agent_client.create_agent(
             model=MODEL_DEPLOYMENT_NAME,
             name=orchestrator_agent_name,
-            instructions=orchestrator_instruction,
+            instructions=orchestrator_instruction, # This now includes the detailed SQL generation guidance
             toolset=self.toolset,
-            top_p=0.01,
-            temperature=0.99
+            top_p=0.01, # Keep as is or adjust as needed
+            temperature=0.99 # Keep as is or adjust as needed
         )
 
         print(f"New agent created: {self.agent.name} ({self.agent.id})")
@@ -97,12 +118,32 @@ class AgentFactory:
 
     def run_tool(self, tool_name: str, args: dict) -> str:
         """Dynamically runs the correct function tool from the toolset based on name."""
+        # This method also needs to be updated to iterate over the 'registered_tools'
+        # or have a direct mapping if that's preferred.
+        # For simplicity, we can assume the toolset now correctly holds the FunctionTool instances.
+        
+        # This implementation iterates over the _tools, which are FunctionTool instances.
+        # Each FunctionTool instance can contain multiple functions.
+        # The agent client's auto-function-calls will map the tool_name to the actual function.
+        # So, this 'run_tool' method is more for manual execution if needed.
+        # It looks like your run_tool method is designed to iterate through the toolset
+        # and find the function by name. This should work IF the FunctionTool was created correctly
+        # with actual function objects.
+        
+        # Let's ensure the tool_name mapping works.
+        # The agent client's auto-function-calls typically handle the direct mapping,
+        # so this `run_tool` might not be strictly necessary if you're solely relying on `create_and_process`.
+        # However, if it's being called, its logic should also reflect the correct tool objects.
+        
+        # The current run_tool method looks correct IF the FunctionTool was correctly populated with the functions.
+        # Since we are fixing the FunctionTool creation, this should now function as expected.
+        
         for tool in self.toolset._tools:  # Accessing the actual FunctionTool instances
-            if hasattr(tool, "functions"):
-                for fn in tool.functions:
+            if hasattr(tool, "functions"): # Check if it's a FunctionTool instance
+                for fn in tool.functions: # Iterate through the functions added to this FunctionTool
                     if fn.__name__ == tool_name:
-                        return json.dumps(fn(**args))  # Ensure it returns a serializable string
-                raise ValueError(f"No tool found for name: {tool_name}")
+                        return json.dumps(fn(**args))  # Call the found function
+        raise ValueError(f"No tool found for name: {tool_name}") # If loop finishes, tool not found
     
     
     def process_request2(
@@ -114,7 +155,7 @@ class AgentFactory:
         thread_id: Optional[str] = None,
     ) -> AgentResponse:
         try:
-            agent_id = self.get_or_create_agent()
+            agent_id = self.get_or_create_agent() # This will now correctly register the tools
 
             # REUSE THREAD LOGIC
             if thread_id:
@@ -127,6 +168,9 @@ class AgentFactory:
                 self.current_thread = thread
                 print(f"Creating new thread ID: {thread.id}")
 
+            # The full_instruction is crucial for guiding the agent.
+            # It already incorporates the orchestrator_instruction from config.py
+            # which now contains the SQL generation logic and schema.
             behavior_instruction = agent_behavior_instructions.get(agent_mode, "")
             if not behavior_instruction:
                 print(f"Warning: Unknown agent_mode '{agent_mode}', defaulting to basic instructions")
@@ -142,31 +186,15 @@ class AgentFactory:
             if not thread_id:
                 self.agent_client.messages.create(
                     thread_id=thread.id,
-                    role="assistant",
+                    role="assistant", # Setting the initial system-like instruction for the agent
                     content=full_instruction
                 )
 
             # Prepare user message
             user_message_content = prompt
-            if self.is_graph_prompt(prompt):
-                user_message_content = "[Trigger generate_graph_data tool]\n" + user_message_content
             
             if file_content:
                 user_message_content += f"\n\n[FILE_CONTENT_START]\n{file_content}\n[FILE_CONTENT_END]"
-
-            # if chat_history:
-            #     for msg in chat_history:
-            #         role = msg["role"]
-            #         if role == "agent":
-            #             role = "assistant"
-            #         elif role not in {"user", "assistant"}:
-            #             print(f"Warning: Unsupported role '{role}', defaulting to 'user'")
-            #             role = "user"
-            #         self.agent_client.messages.create(
-            #             thread_id=thread.id,
-            #             role=role,
-            #             content=msg["content"]
-            #         )
 
             # Send the user's message
             self.agent_client.messages.create(
@@ -175,6 +203,7 @@ class AgentFactory:
                 content=user_message_content
             )
 
+            # The create_and_process method will handle the agent's multi-step tool calls
             run = self.agent_client.runs.create_and_process(thread_id=thread.id, agent_id=agent_id)
             prompt_tokens = run.usage.prompt_tokens or 0
             completion_tokens = run.usage.completion_tokens or 0
@@ -182,7 +211,7 @@ class AgentFactory:
             if run.status == "failed":
                 print(f"Run failed: {run.last_error}")
                 return AgentResponse(
-                    response="An error occurred while processing the request.",
+                    response=f"An error occurred while processing the request: {run.last_error.message if run.last_error else 'Unknown error'}",
                     thread_id=thread.id,
                     is_error=True,
                     input_tokens=prompt_tokens,
@@ -192,27 +221,30 @@ class AgentFactory:
             messages = list(self.agent_client.messages.list(thread_id=thread.id, order=ListSortOrder.ASCENDING))
             agent_response = None
 
+            # Iterate messages in reverse to find the latest agent response
             for message in reversed(messages):
                 if message.role == MessageRole.AGENT and message.text_messages:
                     agent_response = message.text_messages[-1].text.value
                     break
-
-            # === Final response parsing ===
-            if isinstance(agent_response, dict) and "graph_data" in agent_response:
+                elif message.role == MessageRole.TOOL and message.tool_code_messages:
+                    # Continue searching for an AGENT role message
+                    pass 
+            
+            if agent_response is None:
                 return AgentResponse(
-                    response=agent_response.get("response", "Here's the requested data:"),
+                    response="Agent did not provide a direct response. Check logs for tool outputs.",
                     thread_id=thread.id,
+                    is_error=False,
                     input_tokens=prompt_tokens,
-                    output_tokens=completion_tokens,
-                    graph_data=agent_response.get("graph_data"),
-                    is_error=False
+                    output_tokens=completion_tokens
                 )
 
+            # === Final response parsing ===
             try:
                 parsed_response = json.loads(agent_response)
                 if isinstance(parsed_response, dict) and "graph_data" in parsed_response:
                     return AgentResponse(
-                        response=parsed_response.get("response", "Here's the requested data:"),
+                        response=parsed_response.get("response", "Here's the requested data visualization:"),
                         thread_id=thread.id,
                         input_tokens=prompt_tokens,
                         output_tokens=completion_tokens,
@@ -235,8 +267,8 @@ class AgentFactory:
             print("Exception in process_request2:")
             print(traceback.format_exc())
             return AgentResponse(
-                response=f"An error occurred: {str(e)}",
-                thread_id=thread.id if 'thread' in locals() else None,
+                response=f"An internal server error occurred: {str(e)}",
+                thread_id=thread_id if 'thread' in locals() else None,
                 is_error=True
             )
 
