@@ -1,17 +1,15 @@
 # backend/app/agentfactory.py
-
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 from azure.identity import DefaultAzureCredential
 from azure.ai.agents import AgentsClient
 from azure.ai.agents.models import FunctionTool, ToolSet, ListSortOrder, MessageRole
-# Make sure to import all relevant config variables and tools
 from .config import PROJECT_ENDPOINT, MODEL_DEPLOYMENT_NAME, orchestrator_agent_name, orchestrator_instruction, agent_behavior_instructions
-# NEW: Ensure all desired tools are imported here
-from .tools import generate_graph_data, user_functions, execute_databricks_query, get_insights_from_text # <--- ADDED get_insights_from_text
-
+from .tools import generate_graph_data, user_functions, execute_databricks_query, get_insights_from_text
 import traceback
 import json
+import time
+from datetime import datetime, timedelta
 
 @dataclass
 class AgentResponse:
@@ -31,11 +29,10 @@ class AgentResponse:
             "graph_data": self.graph_data,
             "status": "error" if self.is_error else "success"
         }
-    
 
 class AgentFactory:
     def __init__(self):
-        self.agent = None  # cache agent instance
+        self.agent = None
         self.agent_client = AgentsClient(
             endpoint=PROJECT_ENDPOINT,
             credential=DefaultAzureCredential(
@@ -44,108 +41,56 @@ class AgentFactory:
             )
         )
         self.current_thread = None
+        self.active_runs = {}  # Track active runs by thread_id
+        self.last_request_time = {}  # Track last request time by thread_id
 
-
-    #get or create the agent.
     def get_or_create_agent(self) -> str:
-        """
-        Returns the existing agent ID if available, otherwise creates one.
-        Avoids deleting and recreating the agent on every call.
-        """
+        """Returns existing agent ID or creates new one"""
         if self.agent is not None:
-            return self.agent.id  # Already initialized
+            return self.agent.id
 
-        # Define the tools to be added.
-        # These must be the actual function objects.
-        # user_functions, if it contains callable functions, should be unpacked or iterated.
-        # For simplicity, let's explicitly list the functions from tools.py that are actual tools.
-        
-        # Define a list of actual callable functions (tools)
-        # Ensure generate_graph_data is not None if you intend to use it.
-        # If user_functions contains actual callable functions, iterate its values.
-        
-        # Correctly assemble the list of tools to register
-        # Only include functions that are actually meant to be called by the agent.
-        # user_functions as an empty dict means it provides no tools directly.
-        
         registered_tools = [
             execute_databricks_query,
             get_insights_from_text,
-            # Conditionally add generate_graph_data if it's not None (meaning it was imported successfully)
             *([] if generate_graph_data is None else [generate_graph_data]),
-            # If user_functions contains callable tools, add them like this:
-            # *[f for f in user_functions.values() if callable(f)],
         ]
 
-        # Check if agent with desired name already exists
+        # Check for existing agent
         existing_agents = list(self.agent_client.list_agents())  
-          
         for agent in existing_agents:
             if agent.name == orchestrator_agent_name:
                 print(f"Reusing existing agent: {agent.name} ({agent.id})")
-                
-                # Set toolset again (required for auto function call)
                 self.toolset = ToolSet()
-                # NOW ADD THE ACTUAL FUNCTION OBJECTS
-                self.toolset.add(FunctionTool(registered_tools)) # <--- CORRECTED LINE
-
+                self.toolset.add(FunctionTool(registered_tools))
                 self.agent_client.enable_auto_function_calls(self.toolset)
-
                 self.agent = agent
                 return self.agent.id
 
-        # No existing agent found — create a new one
-        print(f"No existing agent found, creating a new one: {orchestrator_agent_name}")
-    
+        # Create new agent
+        print(f"Creating new agent: {orchestrator_agent_name}")
         self.toolset = ToolSet()
-        # NOW ADD THE ACTUAL FUNCTION OBJECTS
-        self.toolset.add(FunctionTool(registered_tools)) # <--- CORRECTED LINE
-
+        self.toolset.add(FunctionTool(registered_tools))
         self.agent_client.enable_auto_function_calls(self.toolset)
-
+        
         self.agent = self.agent_client.create_agent(
             model=MODEL_DEPLOYMENT_NAME,
             name=orchestrator_agent_name,
-            instructions=orchestrator_instruction, # This now includes the detailed SQL generation guidance
+            instructions=orchestrator_instruction,
             toolset=self.toolset,
-            top_p=0.01, # Keep as is or adjust as needed
-            temperature=0.99 # Keep as is or adjust as needed
+            top_p=0.01,
+            temperature=0.99
         )
-
-        print(f"New agent created: {self.agent.name} ({self.agent.id})")
         return self.agent.id
-    
 
     def run_tool(self, tool_name: str, args: dict) -> str:
-        """Dynamically runs the correct function tool from the toolset based on name."""
-        # This method also needs to be updated to iterate over the 'registered_tools'
-        # or have a direct mapping if that's preferred.
-        # For simplicity, we can assume the toolset now correctly holds the FunctionTool instances.
-        
-        # This implementation iterates over the _tools, which are FunctionTool instances.
-        # Each FunctionTool instance can contain multiple functions.
-        # The agent client's auto-function-calls will map the tool_name to the actual function.
-        # So, this 'run_tool' method is more for manual execution if needed.
-        # It looks like your run_tool method is designed to iterate through the toolset
-        # and find the function by name. This should work IF the FunctionTool was created correctly
-        # with actual function objects.
-        
-        # Let's ensure the tool_name mapping works.
-        # The agent client's auto-function-calls typically handle the direct mapping,
-        # so this `run_tool` might not be strictly necessary if you're solely relying on `create_and_process`.
-        # However, if it's being called, its logic should also reflect the correct tool objects.
-        
-        # The current run_tool method looks correct IF the FunctionTool was correctly populated with the functions.
-        # Since we are fixing the FunctionTool creation, this should now function as expected.
-        
-        for tool in self.toolset._tools:  # Accessing the actual FunctionTool instances
-            if hasattr(tool, "functions"): # Check if it's a FunctionTool instance
-                for fn in tool.functions: # Iterate through the functions added to this FunctionTool
+        """Execute a specific tool by name"""
+        for tool in self.toolset._tools:
+            if hasattr(tool, "functions"):
+                for fn in tool.functions:
                     if fn.__name__ == tool_name:
-                        return json.dumps(fn(**args))  # Call the found function
-        raise ValueError(f"No tool found for name: {tool_name}") # If loop finishes, tool not found
-    
-    
+                        return json.dumps(fn(**args))
+        raise ValueError(f"No tool found for name: {tool_name}")
+
     def process_request2(
         self,
         prompt: str,
@@ -153,28 +98,21 @@ class AgentFactory:
         file_content: Optional[str] = None,
         chat_history: Optional[list] = None,
         thread_id: Optional[str] = None,
+        max_retries: int = 3
     ) -> AgentResponse:
         try:
-            agent_id = self.get_or_create_agent() # This will now correctly register the tools
+            agent_id = self.get_or_create_agent()
+            
+            # Check for active runs and clean up old ones
+            self._cleanup_stale_runs()
+            
+            # Get or create thread with active run checking
+            thread = self._get_thread_with_retry(thread_id, max_retries)
+            if isinstance(thread, AgentResponse):
+                return thread  # Return early if we got an error response
 
-            # REUSE THREAD LOGIC
-            if thread_id:
-                thread = self.agent_client.threads.get(thread_id)
-            elif self.current_thread:
-                thread = self.current_thread
-                print(f"Reusing thread ID: {thread.id}")
-            else:
-                thread = self.agent_client.threads.create()
-                self.current_thread = thread
-                print(f"Creating new thread ID: {thread.id}")
-
-            # The full_instruction is crucial for guiding the agent.
-            # It already incorporates the orchestrator_instruction from config.py
-            # which now contains the SQL generation logic and schema.
+            # Prepare full instruction set
             behavior_instruction = agent_behavior_instructions.get(agent_mode, "")
-            if not behavior_instruction:
-                print(f"Warning: Unknown agent_mode '{agent_mode}', defaulting to basic instructions")
-
             full_instruction = f"""
                 [Orchestrator Instructions]
                 {orchestrator_instruction}
@@ -183,94 +121,190 @@ class AgentFactory:
                 {behavior_instruction}
                 """.strip()
 
+            # Initialize thread if new
             if not thread_id:
-                self.agent_client.messages.create(
-                    thread_id=thread.id,
-                    role="assistant", # Setting the initial system-like instruction for the agent
-                    content=full_instruction
+                self._send_message_with_retry(
+                    thread.id,
+                    "assistant",
+                    full_instruction,
+                    max_retries
                 )
 
-            # Prepare user message
+            # Prepare and send user message
             user_message_content = prompt
-            
             if file_content:
                 user_message_content += f"\n\n[FILE_CONTENT_START]\n{file_content}\n[FILE_CONTENT_END]"
 
-            # Send the user's message
-            self.agent_client.messages.create(
-                thread_id=thread.id,
-                role="user",
-                content=user_message_content
+            self._send_message_with_retry(
+                thread.id,
+                "user",
+                user_message_content,
+                max_retries
             )
 
-            # The create_and_process method will handle the agent's multi-step tool calls
-            run = self.agent_client.runs.create_and_process(thread_id=thread.id, agent_id=agent_id)
-            prompt_tokens = run.usage.prompt_tokens or 0
-            completion_tokens = run.usage.completion_tokens or 0
-
-            if run.status == "failed":
-                print(f"Run failed: {run.last_error}")
-                return AgentResponse(
-                    response=f"An error occurred while processing the request: {run.last_error.message if run.last_error else 'Unknown error'}",
-                    thread_id=thread.id,
-                    is_error=True,
-                    input_tokens=prompt_tokens,
-                    output_tokens=completion_tokens
-                )
-
-            messages = list(self.agent_client.messages.list(thread_id=thread.id, order=ListSortOrder.ASCENDING))
-            agent_response = None
-
-            # Iterate messages in reverse to find the latest agent response
-            for message in reversed(messages):
-                if message.role == MessageRole.AGENT and message.text_messages:
-                    agent_response = message.text_messages[-1].text.value
-                    break
-                elif message.role == MessageRole.TOOL and message.tool_code_messages:
-                    # Continue searching for an AGENT role message
-                    pass 
+            # Track this run as active
+            self.active_runs[thread.id] = datetime.now()
             
-            if agent_response is None:
-                return AgentResponse(
-                    response="Agent did not provide a direct response. Check logs for tool outputs.",
-                    thread_id=thread.id,
-                    is_error=False,
-                    input_tokens=prompt_tokens,
-                    output_tokens=completion_tokens
-                )
-
-            # === Final response parsing ===
-            try:
-                parsed_response = json.loads(agent_response)
-                if isinstance(parsed_response, dict) and "graph_data" in parsed_response:
-                    return AgentResponse(
-                        response=parsed_response.get("response", "Here's the requested data visualization:"),
-                        thread_id=thread.id,
-                        input_tokens=prompt_tokens,
-                        output_tokens=completion_tokens,
-                        graph_data=parsed_response.get("graph_data"),
-                        is_error=False
-                    )
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-            return AgentResponse(
-                response=agent_response,
+            # Execute the run
+            run = self.agent_client.runs.create_and_process(
                 thread_id=thread.id,
-                input_tokens=prompt_tokens,
-                output_tokens=completion_tokens,
-                graph_data=None,
-                is_error=False
+                agent_id=agent_id
+            )
+            
+            # Process the results
+            return self._process_run_results(
+                run,
+                thread.id,
+                max_retries
             )
 
         except Exception as e:
-            print("Exception in process_request2:")
-            print(traceback.format_exc())
+            print(f"Exception in process_request2:\n{traceback.format_exc()}")
+            error_msg = str(e)
+            if "active run" in error_msg.lower():
+                error_msg = "Please wait while I finish processing your previous request."
             return AgentResponse(
-                response=f"An internal server error occurred: {str(e)}",
+                response=f"An error occurred: {error_msg}",
                 thread_id=thread_id if 'thread' in locals() else None,
                 is_error=True
             )
+
+    def _get_thread_with_retry(self, thread_id: Optional[str], max_retries: int):
+        """Handle thread retrieval with active run checking"""
+        for attempt in range(max_retries):
+            try:
+                if thread_id:
+                    # Check for active runs
+                    active_runs = list(self.agent_client.runs.list(
+                        thread_id=thread_id,
+                        status="in_progress"
+                    ))
+                    if active_runs:
+                        if attempt == max_retries - 1:
+                            return AgentResponse(
+                                response="Please wait while I finish processing your previous request.",
+                                thread_id=thread_id,
+                                is_error=False
+                            )
+                        time.sleep(1 * (attempt + 1))
+                        continue
+                    
+                    return self.agent_client.threads.get(thread_id)
+                elif self.current_thread:
+                    return self.current_thread
+                else:
+                    thread = self.agent_client.threads.create()
+                    self.current_thread = thread
+                    return thread
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    raise
+                time.sleep(1 * (attempt + 1))
+                
+    def _send_message_with_retry(self, thread_id: str, role: str, content: str, max_retries: int):
+        """Send message with retry logic"""
+        for attempt in range(max_retries):
+            try:
+                self.agent_client.messages.create(
+                    thread_id=thread_id,
+                    role=role,
+                    content=content
+                )
+                return
+            except Exception as e:
+                if "active run" in str(e) and attempt < max_retries - 1:
+                    time.sleep(1 * (attempt + 1))
+                    continue
+                raise
+
+    def _process_run_results(self, run, thread_id, max_retries):
+        """Process run results with retry logic"""
+        prompt_tokens = run.usage.prompt_tokens or 0
+        completion_tokens = run.usage.completion_tokens or 0
+        
+        if run.status == "failed":
+            print(f"Run failed: {run.last_error}")
+            return AgentResponse(
+                response=f"An error occurred: {run.last_error.message if run.last_error else 'Unknown error'}",
+                thread_id=thread_id,
+                is_error=True,
+                input_tokens=prompt_tokens,
+                output_tokens=completion_tokens
+            )
+
+        # Get messages with retry
+        messages = None
+        for attempt in range(max_retries):
+            try:
+                messages = list(self.agent_client.messages.list(
+                    thread_id=thread_id,
+                    order=ListSortOrder.ASCENDING
+                ))
+                break
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    raise
+                time.sleep(1 * (attempt + 1))
+
+        # Find agent response
+        agent_response = None
+        for message in reversed(messages):
+            if message.role == MessageRole.AGENT and message.text_messages:
+                agent_response = message.text_messages[-1].text.value
+                break
+
+        if agent_response is None:
+            return AgentResponse(
+                response="Agent did not provide a direct response. Check logs for tool outputs.",
+                thread_id=thread_id,
+                is_error=False,
+                input_tokens=prompt_tokens,
+                output_tokens=completion_tokens
+            )
+
+        # Clean up active run tracking
+        if thread_id in self.active_runs:
+            del self.active_runs[thread_id]
+
+        # Parse response
+        try:
+            parsed_response = json.loads(agent_response)
+            if isinstance(parsed_response, dict) and "graph_data" in parsed_response:
+                return AgentResponse(
+                    response=parsed_response.get("response", "Here's the requested data visualization:"),
+                    thread_id=thread_id,
+                    input_tokens=prompt_tokens,
+                    output_tokens=completion_tokens,
+                    graph_data=parsed_response.get("graph_data"),
+                    is_error=False
+                )
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        return AgentResponse(
+            response=agent_response,
+            thread_id=thread_id,
+            input_tokens=prompt_tokens,
+            output_tokens=completion_tokens,
+            graph_data=None,
+            is_error=False
+        )
+
+    def _cleanup_stale_runs(self):
+        """Clean up runs that have been active too long"""
+        now = datetime.now()
+        stale_threads = []
+        
+        for thread_id, start_time in self.active_runs.items():
+            if now - start_time > timedelta(minutes=5):  # 5 minute timeout
+                stale_threads.append(thread_id)
+        
+        for thread_id in stale_threads:
+            try:
+                print(f"Cleaning up stale run for thread {thread_id}")
+                del self.active_runs[thread_id]
+            except Exception as e:
+                print(f"Error cleaning up stale run: {e}")
 
     @staticmethod
     def is_graph_prompt(prompt: str) -> bool:
@@ -284,18 +318,17 @@ class AgentFactory:
         prompt_lower = prompt.lower()
         return any(keyword in prompt_lower for keyword in pie_keywords)
 
-
-    def delete_old_threads(self, keep_last_n: int = 10):
-        """
-        Deletes all threads except the most recent N threads.
-        """
+    def delete_old_threads(self, keep_last_n: int = 3):
+        """Clean up old threads while preserving active ones"""
         try:
             threads = list(self.agent_client.threads.list(order=ListSortOrder.DESCENDING))
-            print(f"Found {len(threads)} threads")
-
-            # Keep the most recent N threads
-            threads_to_delete = threads[keep_last_n:]
-
+            threads_to_delete = []
+            
+            for thread in threads[keep_last_n:]:
+                # Don't delete threads with active runs
+                if thread.id not in self.active_runs:
+                    threads_to_delete.append(thread)
+            
             for thread in threads_to_delete:
                 print(f"Deleting thread: {thread.id}")
                 self.agent_client.threads.delete(thread.id)
