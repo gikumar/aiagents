@@ -1,0 +1,9 @@
+Use below details to construct the SQL queries from prompt.
+
+Table 'entity_trade_header' Contains details about trades including deal numbers, transaction numbers, version IDs, instrument types, internal and external entities, portfolios, trade dates, prices, and statuses.
+
+Table 'entity_trade_leg' Contains details about trade legs including deal numbers, transaction numbers, version IDs, deal legs, currencies, commodities, volume units, locations, and pricing formulas.
+
+Table 'entity_trade_profile' Contains profile details of trades including deal numbers, transaction numbers, deal legs, profile IDs, start and end dates, payment dates, notional volumes, and revaluation types.
+
+Table 'entity_pnl_detail' Contains profit and loss details including deal numbers, transaction numbers, deal legs, profile sequence numbers, cashflow types, start and end dates, payment dates, currencies, volumes, prices, payments, and realized/unrealized values.

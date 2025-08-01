@@ -1,0 +1,16 @@
+Schema of table 'entity_trade_profile'
+source_system:string
+deal_num:integer
+tran_num:integer
+version_id:integer
+deal_leg:integer
+internal_portfolio:string
+internal_portfolio_id:integer
+profile_id:integer
+profile_start_date:date
+profile_end_date:date
+payment_date:date
+notional_volume:double
+trade_expiry_date:date
+eod_date:date
+reval_type:string
