@@ -1,6 +1,4 @@
-#Sharing next file just keep it and do not analyze until i confirm I have shared all the files
 # backend/app/main.py
-
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -9,14 +7,10 @@ import os
 import sys
 from contextlib import asynccontextmanager
 from .agentfactory import AgentFactory
-from .schema_routes import router as schema_router
-from .schema_loader import fetch_table_columns
+
 
 # Add the current directory to the Python path
 sys.path.append(os.path.dirname(__file__))
-
-from .schema_loader import fetch_schema_from_databricks
-fetch_schema_from_databricks()
 
 # Initialize the agent factory
 agent_factory = AgentFactory()
@@ -26,12 +20,10 @@ agent_factory = AgentFactory()
 async def lifespan(app: FastAPI):
     """Cleanup on startup and handle shutdown"""
     print("Starting up... Initializing agent factory")
-    # No explicit cleanup needed in new implementation
     yield  # App runs here
     print("Shutting down...")  # Add any cleanup here if needed
 
 app = FastAPI(lifespan=lifespan)
-app.include_router(schema_router)
 
 # --- CORS Configuration ---
 origins = [
@@ -92,6 +84,8 @@ async def ask_agent(request: AskRequest):
             ]
 
         # Process request using AgentFactory
+        # The agent factory's process_request2 method handles the SQL generation
+        # and tool chaining based on its updated instructions.
         response = agent_factory.process_request2(
             prompt=request.prompt,
             agent_mode=request.agentMode,
@@ -126,15 +120,6 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "AI Agent Backend",
-        "version": "1.1",  # Updated version
-        "features": ["text", "graph_generation"]
+        "version": "1.1",
+        "features": ["text", "graph_generation", "nl_to_sql"] # Added nl_to_sql feature
     }
-
-# Refresh schema on app startup
-@app.on_event("startup")
-def load_schema():
-    print("🔄 Fetching schema from Databricks...")
-    fetch_table_columns()
-    print("✅ Schema loaded and cached.")
-
-app.include_router(schema_router)
