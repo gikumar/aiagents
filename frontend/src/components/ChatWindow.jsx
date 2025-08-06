@@ -1,4 +1,4 @@
-//\src\Component\ChatWindow
+// src/components/ChatWindow.jsx
 import axios from "axios";
 import {
   ArcElement,
@@ -18,6 +18,14 @@ import { Bar, Line, Pie } from "react-chartjs-2";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import "../App.css";
+
+// Configure console logging with timestamps
+const log = {
+  info: (...args) => console.log(`[${new Date().toISOString()}] INFO:`, ...args),
+  warn: (...args) => console.warn(`[${new Date().toISOString()}] WARN:`, ...args),
+  error: (...args) => console.error(`[${new Date().toISOString()}] ERROR:`, ...args),
+  debug: (...args) => console.debug(`[${new Date().toISOString()}] DEBUG:`, ...args)
+};
 
 // Register ChartJS components
 ChartJS.register(
@@ -74,12 +82,6 @@ const XCircleIcon = () => (
   </svg>
 );
 
-const ThemeIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" className="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-  </svg>
-);
-
 const AttachmentIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" className="icon-small" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
@@ -127,7 +129,6 @@ const ThemeToggle = ({ theme, toggleTheme }) => {
   );
 };
 
-
 const ChatWindow = () => {
   const [messages, setMessages] = useState([]);
   const [prompt, setPrompt] = useState("");
@@ -149,25 +150,29 @@ const ChatWindow = () => {
   const startX = useRef(0);
   const startWidth = useRef(0);
   const fileInputRef = useRef(null);
-
+  
   // Initialize theme from localStorage or system preference
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme');
     const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     const initialTheme = savedTheme || (systemPrefersDark ? 'dark' : 'light');
+    log.info("Initializing theme:", initialTheme);
     setTheme(initialTheme);
     document.documentElement.setAttribute('data-theme', initialTheme);
   }, []);
 
   // Toggle theme function
   const toggleTheme = (newTheme) => {
+    log.info("Changing theme to:", newTheme);
     setTheme(newTheme);
     document.documentElement.setAttribute('data-theme', newTheme);
     localStorage.setItem('theme', newTheme);
   };
 
+  // Enhanced ChartComponent with validation
   const ChartComponent = ({ chartData }) => {
     if (!chartData || !chartData.data) {
+      log.error("Invalid chart data format", chartData);
       return (
         <div className="error-message-bubble">
           Invalid chart data format
@@ -175,13 +180,22 @@ const ChatWindow = () => {
       );
     }
 
-    return (
-      <>
-        {chartData.type === "bar" && <Bar data={chartData.data} options={chartData.options} />}
-        {chartData.type === "line" && <Line data={chartData.data} options={chartData.options} />}
-        {chartData.type === "pie" && <Pie data={chartData.data} options={chartData.options} />}
-      </>
-    );
+    try {
+      return (
+        <>
+          {chartData.type === "bar" && <Bar data={chartData.data} options={chartData.options} />}
+          {chartData.type === "line" && <Line data={chartData.data} options={chartData.options} />}
+          {chartData.type === "pie" && <Pie data={chartData.data} options={chartData.options} />}
+        </>
+      );
+    } catch (error) {
+      log.error("Chart rendering error:", error);
+      return (
+        <div className="error-message-bubble">
+          Chart rendering failed: {error.message}
+        </div>
+      );
+    }
   };
 
   ChartComponent.propTypes = {
@@ -192,31 +206,168 @@ const ChatWindow = () => {
     }),
   };
 
-  const extractGraphData = (responseText) => {
-    try {
-      const jsonStart = responseText.indexOf('{');
-      const jsonEnd = responseText.lastIndexOf('}') + 1;
-      
-      if (jsonStart >= 0 && jsonEnd > jsonStart) {
-        const jsonStr = responseText.substring(jsonStart, jsonEnd);
-        const parsedData = JSON.parse(jsonStr);
-        return parsedData.graph_data || null;
-      }
-    } catch (e) {
-      console.error("Error parsing embedded JSON:", e);
+  // Robust graph data validation
+  const validateGraphData = (data) => {
+    if (!data) {
+      log.debug("Graph data is null/undefined");
+      return false;
     }
+    
+    const requiredFields = ['type', 'labels', 'values'];
+    for (const field of requiredFields) {
+      if (!(field in data)) {
+        log.debug(`Missing required field: ${field}`);
+        return false;
+      }
+    }
+
+    if (!['bar', 'line', 'pie'].includes(data.type)) {
+      log.debug(`Invalid chart type: ${data.type}`);
+      return false;
+    }
+
+    if (!Array.isArray(data.labels) || !Array.isArray(data.values)) {
+      log.debug("Labels or values are not arrays");
+      return false;
+    }
+
+    if (data.labels.length !== data.values.length) {
+      log.debug("Labels and values length mismatch");
+      return false;
+    }
+
+    if (data.labels.length === 0) {
+      log.debug("Empty data arrays");
+      return false;
+    }
+
+    return true;
+  };
+
+  // Enhanced graph data extraction with multiple fallbacks
+  const extractGraphData = (response) => {
+    log.debug("Attempting to extract graph data from response");
+    
+    // Case 1: Response is already a graph data object
+    if (response && typeof response === 'object' && response.graph_data) {
+      log.debug("Found graph_data in response object");
+      return response.graph_data;
+    }
+    
+    // Case 2: Response is a string that might contain JSON
+    if (typeof response === 'string') {
+      try {
+        // Try parsing as pure JSON first
+        try {
+          const parsed = JSON.parse(response);
+          if (parsed.graph_data) {
+            log.debug("Found graph_data in parsed JSON");
+            return parsed.graph_data;
+          }
+          if (parsed.graphData) { // Handle camelCase variation
+            log.debug("Found graphData in parsed JSON");
+            return parsed.graphData;
+          }
+        } catch (e) {
+          log.debug("Response is not pure JSON, trying embedded JSON");
+        }
+
+        // Try extracting embedded JSON
+        try {
+          const jsonStart = response.indexOf('{');
+          const jsonEnd = response.lastIndexOf('}') + 1;
+          
+          if (jsonStart >= 0 && jsonEnd > jsonStart) {
+            const jsonStr = response.substring(jsonStart, jsonEnd);
+            log.debug("Extracted potential JSON:", jsonStr.slice(0, 100) + (jsonStr.length > 100 ? "..." : ""));
+            
+            const parsedData = JSON.parse(jsonStr);
+            if (parsedData.graph_data) {
+              log.debug("Found graph_data in embedded JSON");
+              return parsedData.graph_data;
+            }
+            if (parsedData.graphData) { // Handle camelCase variation
+              log.debug("Found graphData in embedded JSON");
+              return parsedData.graphData;
+            }
+          }
+        } catch (e) {
+          log.debug("Failed to parse embedded JSON:", e.message);
+        }
+
+        // Try to find graph data in markdown code blocks
+        const codeBlockRegex = /```(?:json)?\s*({.*?})\s*```/s;
+        const match = response.match(codeBlockRegex);
+        if (match) {
+          try {
+            const parsed = JSON.parse(match[1]);
+            if (parsed.graph_data || parsed.graphData) {
+              log.debug("Found graph data in markdown code block");
+              return parsed.graph_data || parsed.graphData;
+            }
+          } catch (e) {
+            log.debug("Failed to parse code block JSON:", e.message);
+          }
+        }
+      } catch (e) {
+        log.debug("Error during string response processing:", e);
+      }
+    }
+
+    log.debug("No valid graph data found in response");
     return null;
   };
 
+  // Enhanced graph rendering with fallbacks
   const renderGraph = (graphData) => {
-    if (!graphData) {
+    log.debug("Rendering graph with data:", graphData);
+    
+    if (!validateGraphData(graphData)) {
+      log.error("Invalid graph data structure:", graphData);
       return (
         <div className="error-message-bubble">
-          No graph data received
+          Invalid graph data structure. Expected format: {"{"}
+          type: 'bar'|'line'|'pie', labels: [], values: []
+          {"}"}
+          <div className="debug-info">
+            <pre>{JSON.stringify(graphData, null, 2)}</pre>
+          </div>
         </div>
       );
     }
 
+    // Check if values are empty or invalid
+    if (!graphData.values || graphData.values.length === 0 || 
+        graphData.values.some(v => v === null || v === undefined || isNaN(v))) {
+      log.warn("Graph data has invalid values - falling back to table view");
+      return (
+        <div className="data-fallback">
+          <h4>{graphData.title || 'Data Table'}</h4>
+          <table>
+            <thead>
+              <tr>
+                <th>Label</th>
+                <th>Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              {graphData.labels.map((label, index) => (
+                <tr key={index}>
+                  <td>{label}</td>
+                  <td>
+                    {graphData.values[index] !== undefined && graphData.values[index] !== null && !isNaN(graphData.values[index]) 
+                      ? graphData.values[index] 
+                      : 'N/A'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+
+    // Prepare chart data with theme-aware colors
     const chartData = {
       type: graphData.type || 'bar',
       data: {
@@ -272,18 +423,24 @@ const ChatWindow = () => {
     );
   };
 
+  // Auto-scroll to bottom when messages change
   useEffect(() => {
+    log.debug("Messages updated, scrolling to bottom");
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Update sidebar width CSS variable
   useEffect(() => {
     if (appContainerRef.current) {
+      log.debug(`Updating sidebar width to ${sidebarWidth}px`);
       appContainerRef.current.style.setProperty("--sidebar-width", `${sidebarWidth}px`);
     }
   }, [sidebarWidth]);
 
+  // Sidebar resize handlers
   const onMouseDown = useCallback((e) => {
     if (!isSidebarHidden) {
+      log.debug("Starting sidebar resize");
       setIsResizing(true);
       startX.current = e.clientX;
       startWidth.current = sidebarRef.current.offsetWidth;
@@ -294,18 +451,25 @@ const ChatWindow = () => {
     if (!isResizing) return;
     const newWidth = startWidth.current + (e.clientX - startX.current);
     const clampedWidth = Math.max(250, Math.min(500, newWidth));
+    log.debug(`Resizing sidebar to ${clampedWidth}px`);
     setSidebarWidth(clampedWidth);
   }, [isResizing]);
 
   const onMouseUp = useCallback(() => {
-    setIsResizing(false);
-  }, []);
+    if (isResizing) {
+      log.debug("Finished sidebar resize");
+      setIsResizing(false);
+    }
+  }, [isResizing]);
 
+  // Add/remove resize event listeners
   useEffect(() => {
     if (isResizing) {
+      log.debug("Adding resize event listeners");
       window.addEventListener("mousemove", onMouseMove);
       window.addEventListener("mouseup", onMouseUp);
     } else {
+      log.debug("Removing resize event listeners");
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     }
@@ -316,15 +480,18 @@ const ChatWindow = () => {
   }, [isResizing, onMouseMove, onMouseUp]);
 
   const toggleSidebar = () => {
+    log.debug(`Toggling sidebar visibility. Current state: ${isSidebarHidden}`);
     setIsSidebarHidden((prev) => !prev);
   };
 
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
     if (!prompt.trim() && (!uploadedFile || !uploadedFile.content)) {
+      log.warn("Submit attempted with empty prompt and no file");
       return;
     }
 
+    log.info("Submitting new message to agent");
     const userMessage = {
       sender: "user",
       text: prompt.trim(),
@@ -333,6 +500,7 @@ const ChatWindow = () => {
         file_content: uploadedFile.content,
       }),
     };
+    
     setMessages((prevMessages) => [...prevMessages, userMessage]);
     setPrompt("");
     setLoading(true);
@@ -348,9 +516,18 @@ const ChatWindow = () => {
       thread_id: currentThreadId || undefined
     };
 
+    log.debug("Sending payload to API:", {
+      ...payload,
+      file_content: payload.file_content ? `[${payload.file_content.length} chars]` : undefined
+    });
+
     try {
       const res = await axios.post("http://localhost:8000/ask", payload);
-      console.log("API Response:", res.data);
+      log.info("Received API response:", {
+        status: res.data.status,
+        thread_id: res.data.thread_id,
+        has_graph_data: !!res.data.graph_data
+      });
 
       let agentResponse = {
         sender: "agent",
@@ -362,18 +539,31 @@ const ChatWindow = () => {
         }
       };
 
-      // First try root-level graph_data
-      if (res.data.graph_data) {
-        agentResponse.type = "graph";
-        agentResponse.data = res.data.graph_data;
-      } 
-      // Then try extracting from response text
-      else {
-        const extractedGraphData = extractGraphData(res.data.response);
-        if (extractedGraphData) {
-          agentResponse.type = "graph";
-          agentResponse.data = extractedGraphData;
+      if (res.data.status === "error") {
+        log.error("API returned error:", res.data.message);
+        agentResponse.text = `Error: ${res.data.message}`;
+        if (res.data.details?.available_columns) {
+          agentResponse.text += `\n\nAvailable columns: ${res.data.details.available_columns.join(', ')}`;
         }
+        agentResponse.isError = true;
+      }
+      
+      // Extract graph data from multiple possible locations
+      let graphData = null;
+      if (res.data.graph_data) {
+        log.debug("Found graph_data in top-level response");
+        graphData = res.data.graph_data;
+      } else {
+        graphData = extractGraphData(res.data.response);
+        if (graphData) {
+          log.debug("Extracted graph_data from response text");
+        }
+      }
+
+      if (graphData) {
+        log.debug("Adding graph data to response");
+        agentResponse.type = "graph";
+        agentResponse.data = graphData;
       }
 
       setMessages((prev) => [...prev, agentResponse]);
@@ -382,13 +572,14 @@ const ChatWindow = () => {
       setOutputTokens(res.data.output_tokens);
 
     } catch (error) {
-      console.error("Error sending message:", error);
+      log.error("Error sending message:", error);
       setMessages((prevMessages) => [
         ...prevMessages,
         {
           sender: "agent",
-          text: "Error: Could not get a response from the agent.",
-          isError: true
+          text: "Error: Could not get a response from the agent. Please try again.",
+          isError: true,
+          details: error.response?.data || error.message
         }
       ]);
     } finally {
@@ -400,16 +591,21 @@ const ChatWindow = () => {
 
   const handleFileUpload = (event) => {
     const file = event.target.files[0];
-    if (!file) return;
+    if (!file) {
+      log.debug("File selection cancelled");
+      return;
+    }
 
-    const MAX_FILE_SIZE = 200 * 1024 * 1024;
+    const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200MB
     if (file.size > MAX_FILE_SIZE) {
+      log.warn("File size exceeds limit:", file.size);
       alert("File size exceeds 200MB limit.");
       event.target.value = "";
       setUploadedFile(null);
       return;
     }
 
+    log.info("Uploading file:", file.name);
     setUploadedFile({
       name: file.name,
       content: null,
@@ -419,6 +615,7 @@ const ChatWindow = () => {
 
     const reader = new FileReader();
     reader.onload = (e) => {
+      log.debug("File read successfully");
       setUploadedFile((prev) => ({
         ...prev,
         content: e.target.result,
@@ -426,6 +623,7 @@ const ChatWindow = () => {
       }));
     };
     reader.onerror = () => {
+      log.error("File read error");
       alert("Failed to read file");
       setUploadedFile({
         name: file.name,
@@ -436,6 +634,7 @@ const ChatWindow = () => {
       event.target.value = "";
     };
     reader.onabort = () => {
+      log.warn("File read aborted");
       alert("File reading cancelled");
       setUploadedFile(null);
       event.target.value = "";
@@ -444,11 +643,13 @@ const ChatWindow = () => {
   };
 
   const handleClearFile = () => {
+    log.debug("Clearing uploaded file");
     setUploadedFile(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleFileClick = () => {
+    log.debug("Triggering file input click");
     fileInputRef.current?.click();
   };
 
@@ -482,25 +683,37 @@ const ChatWindow = () => {
           <div className="behavior-options">
             <button
               className={`behavior-option ${agentBehavior === "Balanced" ? "active" : ""}`}
-              onClick={() => setAgentBehavior("Balanced")}
+              onClick={() => {
+                log.debug("Setting agent behavior to Balanced");
+                setAgentBehavior("Balanced");
+              }}
             >
               Balanced
             </button>
             <button
               className={`behavior-option ${agentBehavior === "Short" ? "active" : ""}`}
-              onClick={() => setAgentBehavior("Short")}
+              onClick={() => {
+                log.debug("Setting agent behavior to Short");
+                setAgentBehavior("Short");
+              }}
             >
               Short
             </button>
             <button
               className={`behavior-option ${agentBehavior === "Detailed" ? "active" : ""}`}
-              onClick={() => setAgentBehavior("Detailed")}
+              onClick={() => {
+                log.debug("Setting agent behavior to Detailed");
+                setAgentBehavior("Detailed");
+              }}
             >
               Detailed
             </button>
             <button
               className={`behavior-option ${agentBehavior === "Structured" ? "active" : ""}`}
-              onClick={() => setAgentBehavior("Structured")}
+              onClick={() => {
+                log.debug("Setting agent behavior to Structured");
+                setAgentBehavior("Structured");
+              }}
             >
               Structured
             </button>
@@ -512,13 +725,19 @@ const ChatWindow = () => {
           <div className="layout-options">
             <button
               className={`layout-option ${messageLayout === "alternating" ? "active" : ""}`}
-              onClick={() => setMessageLayout("alternating")}
+              onClick={() => {
+                log.debug("Setting message layout to alternating");
+                setMessageLayout("alternating");
+              }}
             >
               Alternating
             </button>
             <button
               className={`layout-option ${messageLayout === "same-side" ? "active" : ""}`}
-              onClick={() => setMessageLayout("same-side")}
+              onClick={() => {
+                log.debug("Setting message layout to same-side");
+                setMessageLayout("same-side");
+              }}
             >
               Same Side
             </button>
@@ -582,6 +801,14 @@ const ChatWindow = () => {
                       <span>Tokens: {msg.tokens.input} in / {msg.tokens.output} out</span>
                     </div>
                   )}
+                  {msg.details && (
+                    <div className="debug-details">
+                      <details>
+                        <summary>Error Details</summary>
+                        <pre>{JSON.stringify(msg.details, null, 2)}</pre>
+                      </details>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -606,6 +833,13 @@ const ChatWindow = () => {
 
         <div className="input-area">
           <form onSubmit={handleSubmit} className="input-form">
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              style={{ display: 'none' }}
+              accept=".txt,.csv,.json,.pdf,.doc,.docx"
+            />
             
             <div className="input-row">
               <button
@@ -644,6 +878,25 @@ const ChatWindow = () => {
                 <SendIcon />
               </button>
             </div>
+            {uploadedFile && (
+              <div className="file-attachment-info">
+                {uploadedFile.isLoading ? (
+                  <FileLoadingIndicator />
+                ) : (
+                  <>
+                    <span>{uploadedFile.name}</span>
+                    <button
+                      type="button"
+                      className="clear-file-button"
+                      onClick={handleClearFile}
+                      title="Remove file"
+                    >
+                      <XCircleIcon />
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
           </form>
         </div>
       </div>

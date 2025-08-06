@@ -10,6 +10,8 @@ from .config import (
     DATABRICKS_ACCESS_TOKEN,
     DATABRICKS_HTTP_PATH
 )
+import traceback
+
 
 class DateTimeEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -288,53 +290,109 @@ def get_insights_from_text(text_content: str) -> Dict:
             "message": str(e)
         }
 
+
 def generate_graph_data(query_results: Dict, prompt: str) -> Dict:
-    """Generate visualization data from query results"""
     if not query_results.get('data'):
         return {
             "status": "error",
-            "message": "No data available for visualization",
+            "message": "No data available for graph",
             "query_results": query_results
         }
 
     try:
+        # 1. Create DataFrame
         df = pd.DataFrame(query_results['data'])
+        print("\n=== DEBUG: DataFrame ===")
+        print(df)
         
-        # Apply filters from prompt
-        if 'latest_trade_date' in df.columns:
-            df = apply_time_filter(df, prompt)
-        df = apply_prompt_filters(df, prompt)
+        # 2. Validate columns
+        if len(df.columns) < 2:
+            return {
+                "status": "error",
+                "message": "Need at least 2 columns for graph (labels and values)",
+                "available_columns": df.columns.tolist()
+            }
+
+        # 3. Dynamically determine columns
+        # First column is always labels (deal identifiers)
+        label_col = df.columns[0]
         
-        # Infer visualization parameters
+        # Second column is always values (realized value)
+        value_col = df.columns[1]
+        
+        # 4. Process data
         chart_type = infer_chart_type(prompt)
-        y_axis = infer_y_axis_column(prompt, df)
         top_n = infer_top_n(prompt)
         
-        # Prepare visualization spec
+        # Sort and limit
+        df = df.sort_values(by=value_col, ascending=False)
+        if top_n > 0:
+            df = df.head(top_n)
+        
+        # Get labels and values
+        labels = df[label_col].astype(str).tolist()
+        values = pd.to_numeric(df[value_col], errors='coerce').fillna(0).tolist()
+        
+        print("\n=== DEBUG: Processed Graph Data ===")
+        print(f"Labels: {labels}")
+        print(f"Values: {values}")
+        
+        # Create a readable label for the dataset
+        dataset_label = f"Top {len(values)} by Realized Value"
+        if value_col != "realized_value":
+            # Try to make the label more descriptive
+            dataset_label = f"Top {len(values)} by {value_col.replace('_', ' ').title()}"
+        
         return {
             "status": "success",
-            "visualization": {
-                "chart_type": chart_type,
-                "x_axis": "trader" if "trader" in df.columns else df.columns[0],
-                "y_axis": y_axis,
-                "data": json.loads(df.to_json(orient='records', date_format='iso')),
-                "top_n": top_n
+            "graphData": {
+                "type": chart_type,
+                "labels": labels,
+                "values": values,
+                "dataset_label": dataset_label,
+                "title": f"Top {len(values)} Deals by Realized Value"
             }
         }
+        
     except Exception as e:
         return {
             "status": "error",
             "message": f"Graph generation failed: {str(e)}",
-            "query_results": query_results
+            "query_results": query_results,
+            "traceback": traceback.format_exc()
         }
+    
+
 
 # Graph utility functions (from graph_utils.py)
+# tools.py
 def infer_y_axis_column(prompt: str, df: pd.DataFrame) -> str:
     prompt_lower = prompt.lower()
+    
+    # 1. Check for exact column matches first
     for col in df.columns:
-        if col != "deal_num" and col in prompt_lower:
+        col_lower = col.lower()
+        if any(kw in col_lower for kw in ["realized_pnl", "realized_value", "pnl"]):
+            if col_lower in prompt_lower:
+                return col
+    
+    # 2. Try common PnL variations using schema knowledge
+    pnl_variations = [
+        'ltd_realized_value', 'ytd_realized_value', 'mtd_realized_value',
+        'dtd_realized_value', 'realized_value_eur', 'trade_price'
+    ]
+    for variation in pnl_variations:
+        if variation in df.columns:
+            return variation
+    
+    # 3. Fallback to first numeric column
+    for col in df.columns:
+        if pd.api.types.is_numeric_dtype(df[col]):
             return col
-    return "total_realized_pnl"
+    
+    # 4. Final fallback
+    return df.columns[1] if len(df.columns) > 1 else df.columns[0]
+
 
 def infer_chart_type(prompt: str) -> str:
     if "line" in prompt.lower():
@@ -344,11 +402,13 @@ def infer_chart_type(prompt: str) -> str:
     else: 
         return "bar"
 
+
 def infer_top_n(prompt: str, default: int = 10) -> int:
     match = re.search(r"top\s+(\d+)", prompt.lower())
     if match:
         return int(match.group(1))
     return default
+
 
 def apply_prompt_filters(df: pd.DataFrame, prompt: str) -> pd.DataFrame:
     prompt_lower = prompt.lower()
@@ -356,18 +416,18 @@ def apply_prompt_filters(df: pd.DataFrame, prompt: str) -> pd.DataFrame:
     # Filter by trader
     if 'trader' in df.columns:
         for trader in df['trader'].dropna().unique():
-            if trader.lower() in prompt_lower:
+            if str(trader).lower() in prompt_lower:
                 df = df[df['trader'].str.lower() == trader.lower()]
                 break
 
     # Filter by counterparty
     if 'counterparty' in df.columns:
         for cp in df['counterparty'].dropna().unique():
-            if cp.lower() in prompt_lower:
+            if str(cp.lower()) in prompt_lower:
                 df = df[df['counterparty'].str.lower() == cp.lower()]
                 break
-
     return df
+
 
 def apply_time_filter(df: pd.DataFrame, prompt: str) -> pd.DataFrame:
     """Apply time filters from natural language prompt"""
@@ -391,8 +451,128 @@ def apply_time_filter(df: pd.DataFrame, prompt: str) -> pd.DataFrame:
     for i, month in enumerate(months):
         if month in prompt_lower:
             return df[df['latest_trade_date'].dt.month == i+1]
-
     return df
+
+
+def generate_graph_from_prompt(prompt: str) -> Dict:
+    """
+    End-to-end pipeline for generating graph data from natural language prompts.
+    
+    This function serves as the primary interface between natural language requests
+    and data graphs by orchestrating three key stages:
+    1. SQL Generation: Converts natural language prompts into executable SQL queries
+    2. Data Retrieval: Executes queries against the Databricks data warehouse
+    3. graph Preparation: Transforms query results into chart-ready data
+    
+    The pipeline:
+    a. Accepts user prompts like "Show top 5 traders by PnL as bar chart"
+    b. Generates SQL using specialized NLP-to-SQL agent
+    c. Executes SQL against Databricks Unity Catalog
+    d. Processes results into graph specifications (chart type, axes, data)
+    
+    Returns a standardized response containing either:
+    - Successful graph data payload (status: "success"), or
+    - Detailed error information (status: "error")
+    
+    Response Structure (success):
+    {
+        "status": "success",
+        "response": "Here's the requested graph:",
+        "graph_data": {
+            "chart_type": "bar"|"line"|"pie",
+            "x_axis": "trader",
+            "y_axis": "total_realized_pnl",
+            "data": [...]  // Processed dataset
+        }
+    }
+    
+    Response Structure (error):
+    {
+        "status": "error",
+        "message": "Descriptive error message",
+        "details": "Technical details/traceback"
+    }
+    
+    This function is designed to be registered directly with AI agents as a tool
+    for natural language-driven data graph.
+    
+    Args:
+        prompt: Natural language request for data graph
+        
+    Returns:
+        dict: Standardized response containing either graph data or error information
+    """
+    try:
+        print("\n=== DEBUG: Starting graph generation ===")
+        print(f"Original prompt: {prompt}")
+        
+        from .agsqlquerygenerator import AGSQLQueryGenerator
+        # Step 1: Generate SQL from prompt
+        sql_generator = AGSQLQueryGenerator()
+        sql_query_string = sql_generator.invoke(prompt)
+        sql_response = {
+            "status": "success",
+            "sql_query": sql_query_string
+        }
+        
+        print(f"\n=== DEBUG: Generated SQL ===\n{sql_query_string}\n")
+        
+        # Step 2: Run the SQL query
+        query_results = execute_databricks_query(sql_response["sql_query"])
+        print(f"\n=== DEBUG: Query Results ===\n{json.dumps(query_results, indent=2)}\n")
+        
+        if query_results.get("status") != "success":
+            print("=== DEBUG: SQL Execution Failed ===")
+            return {
+                "status": "error",
+                "message": "SQL execution failed",
+                "details": query_results
+            }
+
+        # Step 3: Generate the graph data
+        graph_result = generate_graph_data(query_results, prompt)
+        print("\n=== DEBUG: Graph Result ===")
+        print(json.dumps(graph_result, indent=2))
+        
+        # Return structured response expected by frontend
+        if graph_result.get("status") == "success":
+            graph_data = graph_result["graphData"]
+            print("\n=== DEBUG: Final Graph Data ===")
+            print(json.dumps(graph_data, indent=2))
+            
+            # Check for empty values
+            if not graph_data["values"] or len(graph_data["values"]) == 0:
+                print("=== DEBUG: Empty Values Detected ===")
+                return {
+                    "status": "error",
+                    "message": "Graph data contains empty values",
+                    "details": {
+                        "inferred_y_axis": graph_data["dataset_label"].split()[-1],
+                        "available_columns": query_results["columns"]
+                    }
+                }
+                
+            return {
+                "status": "success",
+                "response": "Here's the requested graph:",
+                "graph_data": {
+                    "type": graph_data["type"],
+                    "labels": graph_data["labels"],
+                    "values": graph_data["values"],
+                    "dataset_label": graph_data["dataset_label"],
+                    "title": graph_data["title"]
+                }
+            }
+        else:
+            return graph_result
+            
+    except Exception as e:
+        print(f"\n=== DEBUG: Exception ===\n{traceback.format_exc()}")
+        return {
+            "status": "error",
+            "message": f"Failed to generate graph: {str(e)}",
+            "details": traceback.format_exc()
+        }
 
 # Maintain empty user_functions dict as expected by agentfactory.py
 user_functions = {}
