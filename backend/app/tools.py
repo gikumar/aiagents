@@ -292,21 +292,25 @@ def get_insights_from_text(text_content: str) -> Dict:
 
 
 def generate_graph_data(query_results: Dict, prompt: str) -> Dict:
+    print("inside generate_graph_data")
     if not query_results.get('data'):
+        print("inside generate_graph_data- query result DOESN'T HAVE data for graph")
         return {
             "status": "error",
             "message": "No data available for graph",
             "query_results": query_results
         }
-
+    
+    print("inside generate_graph_data- query result HAVE data for graph")
     try:
         # 1. Create DataFrame
         df = pd.DataFrame(query_results['data'])
-        print("\n=== DEBUG: DataFrame ===")
+        print("\n=== DATAFRAME CREATED FROM QUERY RESULT DATA ===")
         print(df)
         
         # 2. Validate columns
         if len(df.columns) < 2:
+            print("graph data doesn't have all the columns")
             return {
                 "status": "error",
                 "message": "Need at least 2 columns for graph (labels and values)",
@@ -316,9 +320,11 @@ def generate_graph_data(query_results: Dict, prompt: str) -> Dict:
         # 3. Dynamically determine columns
         # First column is always labels (deal identifiers)
         label_col = df.columns[0]
+        print("# First column is always labels (deal identifiers)", label_col)
         
         # Second column is always values (realized value)
         value_col = df.columns[1]
+        print("# Second column is always values (realized value)", value_col)
         
         # 4. Process data
         chart_type = infer_chart_type(prompt)
@@ -333,9 +339,9 @@ def generate_graph_data(query_results: Dict, prompt: str) -> Dict:
         labels = df[label_col].astype(str).tolist()
         values = pd.to_numeric(df[value_col], errors='coerce').fillna(0).tolist()
         
-        print("\n=== DEBUG: Processed Graph Data ===")
-        print(f"Labels: {labels}")
-        print(f"Values: {values}")
+        print("\n=== PREPARING GRAPH DATA ===")
+        print(f"graph Labels: {labels}")
+        print(f"graph Values: {values}")
         
         # Create a readable label for the dataset
         dataset_label = f"Top {len(values)} by Realized Value"
@@ -343,6 +349,7 @@ def generate_graph_data(query_results: Dict, prompt: str) -> Dict:
             # Try to make the label more descriptive
             dataset_label = f"Top {len(values)} by {value_col.replace('_', ' ').title()}"
         
+        print(f"graph datset_label: {dataset_label}")
         return {
             "status": "success",
             "graphData": {
@@ -457,57 +464,37 @@ def apply_time_filter(df: pd.DataFrame, prompt: str) -> pd.DataFrame:
 def generate_graph_from_prompt(prompt: str) -> Dict:
     """
     End-to-end pipeline for generating graph data from natural language prompts.
-    
-    This function serves as the primary interface between natural language requests
-    and data graphs by orchestrating three key stages:
-    1. SQL Generation: Converts natural language prompts into executable SQL queries
-    2. Data Retrieval: Executes queries against the Databricks data warehouse
-    3. graph Preparation: Transforms query results into chart-ready data
-    
-    The pipeline:
-    a. Accepts user prompts like "Show top 5 traders by PnL as bar chart"
-    b. Generates SQL using specialized NLP-to-SQL agent
-    c. Executes SQL against Databricks Unity Catalog
-    d. Processes results into graph specifications (chart type, axes, data)
-    
-    Returns a standardized response containing either:
-    - Successful graph data payload (status: "success"), or
-    - Detailed error information (status: "error")
-    
-    Response Structure (success):
-    {
-        "status": "success",
-        "response": "Here's the requested graph:",
-        "graph_data": {
-            "chart_type": "bar"|"line"|"pie",
-            "x_axis": "trader",
-            "y_axis": "total_realized_pnl",
-            "data": [...]  // Processed dataset
-        }
-    }
-    
-    Response Structure (error):
-    {
-        "status": "error",
-        "message": "Descriptive error message",
-        "details": "Technical details/traceback"
-    }
-    
-    This function is designed to be registered directly with AI agents as a tool
-    for natural language-driven data graph.
-    
-    Args:
-        prompt: Natural language request for data graph
-        
-    Returns:
-        dict: Standardized response containing either graph data or error information
     """
     try:
-        print("\n=== DEBUG: Starting graph generation ===")
+        print("=== generate_graph_from_prompt called ===")        
         print(f"Original prompt: {prompt}")
+        print("# Extract data directly from prompt if available")
         
+        if "The data is as follows:" in prompt.lower():
+            print("# parsing the graph data from prompt")
+            deal_nums = re.search(r"Deal Numbers: (\[[^\]]+\])", prompt)
+            pnl_values = re.search(r"Realized PnL Values: (\[[^\]]+\])", prompt)
+            
+            if deal_nums and pnl_values:
+                labels = json.loads(deal_nums.group(1))
+                values = json.loads(pnl_values.group(1))
+                values = [v/1e9 for v in values] # Convert to billions
+                
+                return {
+                    "status": "success",
+                    "response": "Here's the requested graph:",
+                    "graph_data": {
+                        "type": "bar",
+                        "labels": labels,
+                        "values": values,
+                        "dataset_label": "Realized PnL (in billions)",
+                        "title": "Top 5 Deals by Realized PnL"
+                    }
+                }
+            
+        print("# Fall back to SQL generation as no direct data in prompt")
         from .agsqlquerygenerator import AGSQLQueryGenerator
-        # Step 1: Generate SQL from prompt
+        print("# Step 1: Generating SQL from prompt")
         sql_generator = AGSQLQueryGenerator()
         sql_query_string = sql_generator.invoke(prompt)
         sql_response = {
@@ -515,55 +502,38 @@ def generate_graph_from_prompt(prompt: str) -> Dict:
             "sql_query": sql_query_string
         }
         
-        print(f"\n=== DEBUG: Generated SQL ===\n{sql_query_string}\n")
+        print(f"\n Generated SQL From prompt \n{sql_query_string}\n")
         
-        # Step 2: Run the SQL query
+        print("# Step 2: Run the SQL query")
         query_results = execute_databricks_query(sql_response["sql_query"])
-        print(f"\n=== DEBUG: Query Results ===\n{json.dumps(query_results, indent=2)}\n")
+        print(f"\n=== Generated SQL query execution result ===\n{json.dumps(query_results, indent=2)}\n")
         
         if query_results.get("status") != "success":
-            print("=== DEBUG: SQL Execution Failed ===")
+            print("=== Generated SQL query execution Failed ===")
             return {
                 "status": "error",
                 "message": "SQL execution failed",
                 "details": query_results
             }
 
-        # Step 3: Generate the graph data
+        print("## Step 3: MAIN STEP Generate the graph data by calling generate_graph_data")
         graph_result = generate_graph_data(query_results, prompt)
-        print("\n=== DEBUG: Graph Result ===")
+        print(" ### GENERATED GRAPH DATA ### ===")
+        print("generated graph data")
+        print(graph_result)
+        print("generated graph data in json format")
         print(json.dumps(graph_result, indent=2))
         
         # Return structured response expected by frontend
         if graph_result.get("status") == "success":
-            graph_data = graph_result["graphData"]
-            print("\n=== DEBUG: Final Graph Data ===")
-            print(json.dumps(graph_data, indent=2))
-            
-            # Check for empty values
-            if not graph_data["values"] or len(graph_data["values"]) == 0:
-                print("=== DEBUG: Empty Values Detected ===")
-                return {
-                    "status": "error",
-                    "message": "Graph data contains empty values",
-                    "details": {
-                        "inferred_y_axis": graph_data["dataset_label"].split()[-1],
-                        "available_columns": query_results["columns"]
-                    }
-                }
-                
+            print("graph data generation status is success")
             return {
                 "status": "success",
                 "response": "Here's the requested graph:",
-                "graph_data": {
-                    "type": graph_data["type"],
-                    "labels": graph_data["labels"],
-                    "values": graph_data["values"],
-                    "dataset_label": graph_data["dataset_label"],
-                    "title": graph_data["title"]
-                }
+                "graph_data": graph_result["graphData"]
             }
         else:
+            print("graph data generation status was not success")
             return graph_result
             
     except Exception as e:
@@ -573,6 +543,81 @@ def generate_graph_from_prompt(prompt: str) -> Dict:
             "message": f"Failed to generate graph: {str(e)}",
             "details": traceback.format_exc()
         }
+    
+
+
+def generate_graph_data_from_results(query_results: Dict, prompt: str) -> Dict:
+    """
+    Generate graph data directly from query results
+    (Fixed to properly handle query results)
+    """
+    if query_results.get('status') != 'success':
+        return {
+            "status": "error",
+            "message": "Query execution failed",
+            "details": query_results
+        }
+    
+    if not query_results.get('data') or len(query_results['data']) == 0:
+        return {
+            "status": "error",
+            "message": "No data available for graph",
+            "query_results": query_results
+        }
+
+    try:
+        # Create DataFrame from results
+        df = pd.DataFrame(query_results['data'])
+        
+        # Validate columns
+        if len(df.columns) < 2:
+            return {
+                "status": "error",
+                "message": "Need at least 2 columns for graph (labels and values)",
+                "available_columns": df.columns.tolist()
+            }
+
+        # First column is labels (deal identifiers)
+        label_col = df.columns[0]
+        
+        # Second column is values (realized value)
+        value_col = df.columns[1]
+        
+        # Process data
+        chart_type = infer_chart_type(prompt)
+        top_n = infer_top_n(prompt)
+        
+        # Sort and limit
+        df = df.sort_values(by=value_col, ascending=False)
+        if top_n > 0:
+            df = df.head(top_n)
+        
+        # Get labels and values
+        labels = df[label_col].astype(str).tolist()
+        values = pd.to_numeric(df[value_col], errors='coerce').fillna(0).tolist()
+        
+        # Create a readable label
+        dataset_label = f"Top {len(values)} by Realized Value"
+        if value_col != "realized_value":
+            # Try to make the label more descriptive
+            dataset_label = f"Top {len(values)} by {value_col.replace('_', ' ').title()}"
+        
+        return {
+            "type": chart_type,
+            "labels": labels,
+            "values": values,
+            "dataset_label": dataset_label,
+            "title": f"Top {len(values)} Deals by Realized Value"
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Graph generation failed: {str(e)}",
+            "query_results": query_results,
+            "traceback": traceback.format_exc()
+        }
+
 
 # Maintain empty user_functions dict as expected by agentfactory.py
 user_functions = {}
