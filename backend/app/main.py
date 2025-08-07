@@ -7,7 +7,7 @@ import os
 import sys
 from contextlib import asynccontextmanager
 from .agentfactory import AgentFactory
-from .utility.thread_cleanup_scheduler import start_thread_cleanup_scheduler  # ✅ Import scheduler
+from .utility.thread_cleanup_scheduler import start_thread_cleanup_scheduler
 
 # Add the current directory to the Python path
 sys.path.append(os.path.dirname(__file__))
