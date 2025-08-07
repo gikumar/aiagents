@@ -7,7 +7,7 @@ import os
 import sys
 from contextlib import asynccontextmanager
 from .agentfactory import AgentFactory
-
+from .utility.thread_cleanup_scheduler import start_thread_cleanup_scheduler  # ✅ Import scheduler
 
 # Add the current directory to the Python path
 sys.path.append(os.path.dirname(__file__))
@@ -18,9 +18,13 @@ agent_factory = AgentFactory()
 # --- FastAPI Lifespan Events ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Cleanup on startup and handle shutdown"""
-    print("Starting up... Initializing agent factory")
-    yield  # App runs here
+    print("Starting up... Initializing agent factory and cleanup scheduler")
+    
+    # Start thread cleanup scheduler
+    start_thread_cleanup_scheduler()
+    
+    yield  # Application runs here
+    
     print("Shutting down...")  # Add any cleanup here if needed
 
 app = FastAPI(lifespan=lifespan)
@@ -84,8 +88,6 @@ async def ask_agent(request: AskRequest):
             ]
 
         # Process request using AgentFactory
-        # The agent factory's process_request2 method handles the SQL generation
-        # and tool chaining based on its updated instructions.
         response = agent_factory.process_request2(
             prompt=request.prompt,
             agent_mode=request.agentMode,

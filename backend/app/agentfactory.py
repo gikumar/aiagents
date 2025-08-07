@@ -1,8 +1,10 @@
 # backend/app/agentfactory.py
 
+# backend/app/agentfactory.py
+
 from dataclasses import dataclass
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List  # <-- Added List import here
 from azure.identity import DefaultAzureCredential
 from azure.ai.agents import AgentsClient
 from azure.ai.agents.models import FunctionTool, ToolSet, ListSortOrder, MessageRole
@@ -26,6 +28,7 @@ from datetime import datetime, timedelta
 import logging
 from .tools import generate_graph_data_from_results 
 
+from app.utility.thread_cleanup_scheduler import register_agent_instance  # <-- Added registration import
 
 # Get the logger for the specific library
 logger = logging.getLogger('azure-ai-generative')
@@ -54,6 +57,8 @@ class AgentResponse:
         }
 
 class AgentFactory:
+    STALE_RUN_THRESHOLD = timedelta(minutes=5)
+    
     def __init__(self):
         self.agent = None
         self.agent_client = AgentsClient(
@@ -66,10 +71,38 @@ class AgentFactory:
         self.current_thread = None
         self.active_runs = {}
         self.last_request_time = {}
+        self.last_cleanup = datetime.now()
+        self.cleanup_interval = timedelta(minutes=10)
 
+        # Register this instance with the cleanup scheduler registry
+        register_agent_instance("OrchestratorAgent", self)
+
+    def mark_run_active(self, thread_id: str):
+        self.active_runs[thread_id] = datetime.now()
+
+    def remove_run(self, thread_id: str):
+        if thread_id in self.active_runs:
+            del self.active_runs[thread_id]
+
+    def get_active_thread_ids(self):
+        """Return thread IDs of runs active within the stale threshold window."""
+        now = datetime.now()
+        active_ids = [
+            tid for tid, start_time in self.active_runs.items()
+            if now - start_time < self.STALE_RUN_THRESHOLD
+        ]
+        return active_ids
+
+    def cleanup_stale_runs(self):
+        """Remove runs older than STALE_RUN_THRESHOLD."""
+        now = datetime.now()
+        stale = [tid for tid, t in self.active_runs.items() if now - t > self.STALE_RUN_THRESHOLD]
+        for tid in stale:
+            del self.active_runs[tid]
 
     def get_or_create_agent(self) -> str:
         print("0001A inside get_or_create_agent")
+        
         if self.agent is not None:
             return self.agent.id
 
@@ -99,7 +132,7 @@ class AgentFactory:
             name=orchestrator_agent_name,
             instructions=orchestrator_instruction,
             toolset=self.toolset,
-            top_p=0.99,
+            top_p=0.89,
             temperature=0.01
         )
         return self.agent.id
@@ -125,8 +158,11 @@ class AgentFactory:
         max_retries: int = 3
     ) -> AgentResponse:
         try:
+            if datetime.now() - self.last_cleanup > self.cleanup_interval:
+                self.cleanup_stale_runs()
+                self.last_cleanup = datetime.now()
+            
             agent_id = self.get_or_create_agent()
-            self._cleanup_stale_runs()
             thread = self._get_thread_with_retry(thread_id, max_retries)
             if isinstance(thread, AgentResponse):
                 return thread
@@ -179,7 +215,8 @@ class AgentFactory:
                 max_retries
             )
 
-            self.active_runs[thread.id] = datetime.now()
+            self.mark_run_active(thread.id)
+
 
             run = self.agent_client.runs.create_and_process(
                 thread_id=thread.id,
@@ -212,7 +249,9 @@ class AgentFactory:
                 thread_id=thread_id if 'thread' in locals() else None,
                 is_error=True
             )
-        
+        finally:
+            if 'thread' in locals():
+                self.remove_run(thread.id)  # Always remove run tracking
 
 
     def _get_tool_output(self, run, tool_name: str) -> Optional[Dict]:
@@ -484,7 +523,7 @@ class AgentFactory:
             if deal_nums_match and pnl_values_match:
                 labels = json.loads(deal_nums_match.group(1))
                 values = json.loads(pnl_values_match.group(1))
-                values = [v/1e9 for v in values]  # Convert to billions
+                values = [v / 1e9 for v in values]  # Convert to billions
                 
                 return {
                     "type": "bar",
@@ -496,27 +535,6 @@ class AgentFactory:
         except Exception as e:
             print(f"Error extracting data from response: {str(e)}")
         return None
-
-    def _cleanup_stale_runs(self):
-        now = datetime.now()
-        stale_threads = [tid for tid, t in self.active_runs.items() if now - t > timedelta(minutes=5)]
-        for tid in stale_threads:
-            try:
-                print(f" 0017 Cleaning up stale run for thread {tid}")
-                del self.active_runs[tid]
-            except Exception as e:
-                print(f" 0018 Error cleaning up stale run: {e}")
-
-    def delete_old_threads(self, keep_last_n: int = 3):
-        try:
-            threads = list(self.agent_client.threads.list(order=ListSortOrder.DESCENDING))
-            threads_to_delete = [t for t in threads[keep_last_n:] if t.id not in self.active_runs]
-            for t in threads_to_delete:
-                print(f" 0019 Deleting thread: {t.id}")
-                self.agent_client.threads.delete(t.id)
-            print(f" 0020 Deleted {len(threads_to_delete)} old threads, kept {keep_last_n} latest.")
-        except Exception as e:
-            print(f" 0021 Error while deleting threads: {e}")
 
     @staticmethod
     def is_graph_prompt(prompt: str) -> bool:
