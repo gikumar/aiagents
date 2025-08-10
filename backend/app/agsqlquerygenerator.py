@@ -1,4 +1,6 @@
+#Do not begin processing or making changes until I have shared all the files and explicitly confirm that I am done.
 # backend/app/agsqlquerygenerator.py
+
 import threading
 import logging
 from datetime import datetime, timedelta
@@ -17,7 +19,7 @@ from .configagsqlquerygenerator import (
 from .sql_query_generator_instruction import build_sql_instruction
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.NullHandler())
 
 class AGSQLQueryGenerator:
     _lock = threading.Lock()
@@ -120,6 +122,12 @@ class AGSQLQueryGenerator:
                 self.last_cleanup = datetime.now()
 
     def extract_sql_query(self, response: str) -> str:
+        """Ensure only valid SQL is returned"""
+        # Reject any code that isn't SQL
+        if "import matplotlib" in response or "plt." in response:
+            logger.error("Rejected non-SQL code generation")
+            raise ValueError("Only SQL queries should be generated")
+    
         if "SELECT" in response and "FROM" in response and "```" not in response:
             return response.strip()
 

@@ -762,7 +762,7 @@ const ChatWindow = () => {
       {/* Main Chat Area */}
       <div className="main-chat-area">
         <div className="main-chat-header">
-          <h3 className="welcome-title">E&C - Integrated AI Agents</h3>
+          <h3 className="welcome-title">E&C - Interactive Agent</h3>
           <p className="welcome-subtitle">AI-powered agent for front, middle and back offices</p>
         </div>
 

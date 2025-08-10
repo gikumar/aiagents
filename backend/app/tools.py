@@ -2,16 +2,23 @@
 import json
 import re
 from datetime import datetime, date
-from typing import Dict, List, Optional
-import pandas as pd
-from databricks import sql
-from .config import (
-    DATABRICKS_SERVER_HOSTNAME,
-    DATABRICKS_ACCESS_TOKEN,
-    DATABRICKS_HTTP_PATH
-)
+from typing import Dict, List
+import logging
 import traceback
+from .graph_service import GraphService
 
+# Set up logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.ERROR)
+
+# Create console handler with higher level
+ch = logging.StreamHandler()
+ch.setLevel(logging.INFO)
+
+# Create formatter and add it to the handlers
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+ch.setFormatter(formatter)
+logger.addHandler(ch)
 
 class DateTimeEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -19,605 +26,175 @@ class DateTimeEncoder(json.JSONEncoder):
             return obj.isoformat()
         return super().default(obj)
 
-def execute_databricks_query(sql_query: str) -> Dict:
-    """
-    Enhanced Databricks query execution with:
-    1. Automatic error recovery
-    2. Schema validation
-    3. Self-healing queries
-    """
-    # First validate the query
-    validation = validate_databricks_query(sql_query)
-    if not validation["is_valid"]:
-        return {
-            "status": "error",
-            "message": f"Query validation failed: {validation['message']}",
-            "query": sql_query,
-            "suggested_fixes": validation.get("suggestions", [])
-        }
 
+def generate_graph_from_prompt(prompt: str) -> Dict:
+    """Ensure consistent output format for frontend"""
+    logger.info("Starting generate_graph_from_prompt tool")
+    
     try:
-        with sql.connect(
-            server_hostname=DATABRICKS_SERVER_HOSTNAME,
-            http_path=DATABRICKS_HTTP_PATH,
-            access_token=DATABRICKS_ACCESS_TOKEN
-        ) as conn:
-            with conn.cursor() as cursor:
-                cursor.execute(sql_query)
-                columns = [desc[0] for desc in cursor.description]
-                data = []
-                for row in cursor.fetchall():
-                    row_dict = {}
-                    for idx, col in enumerate(columns):
-                        if isinstance(row[idx], (datetime, date)):
-                            row_dict[col] = row[idx].isoformat()
-                        else:
-                            row_dict[col] = row[idx]
-                    data.append(row_dict)
+        result = GraphService.generate_from_prompt(prompt)
+        if result.get("status") == "success":
+            return {
+                "status": "success",
+                "graph_data": {
+                    "type": result["graph"]["type"],
+                    "labels": result["graph"]["labels"],
+                    "values": result["graph"]["values"],
+                    "dataset_label": result["graph"]["dataset_label"],
+                    "title": result["graph"]["title"]
+                }
+            }
+
+        if result.get("status") != "success":
+            error_msg = result.get("message", "Unknown error generating graph")
+            available_cols = result.get("available_columns", [])
+            
+            if available_cols:
+                error_msg += f"\n\nAvailable columns: {', '.join(available_cols)}"
                 
-                return {
-                    "status": "success",
-                    "columns": columns,
-                    "data": data,
-                    "query": sql_query,
-                    "row_count": len(data)
-                }
-
-    except Exception as e:
-        # Handle column resolution errors with automatic recovery
-        if "UNRESOLVED_COLUMN" in str(e):
-            return handle_column_error(e, sql_query)
-        # Handle syntax errors for DISTINCT and other keywords
-        elif "PARSE_SYNTAX_ERROR" in str(e):
-            return handle_syntax_error(e, sql_query)
-        return {
-            "status": "error",
-            "message": str(e),
-            "query": sql_query,
-            "error_type": type(e).__name__
-        }
-
-def handle_column_error(error: Exception, query: str) -> Dict:
-    """
-    Automatically handle column resolution errors by:
-    1. Extracting suggested columns from error
-    2. Fetching table schema if needed
-    3. Providing corrected query suggestions
-    """
-    error_msg = str(error)
-    table_match = re.search(r"FROM\s+([^\s,;]+)", query, re.IGNORECASE)
-    table = table_match.group(1) if table_match else "unknown_table"
-    
-    # Extract suggested columns from error
-    suggestions = []
-    if "Did you mean one of the following?" in error_msg:
-        suggestions = re.findall(r"`([^`]+)`", error_msg.split("following?")[1])
-    
-    # Get full schema if we have table name
-    schema_info = {}
-    if table != "unknown_table":
-        schema_info = describe_table(table)
-    
-    # Try to find similar columns
-    bad_column = re.search(r"name `([^`]+)`", error_msg)
-    if bad_column:
-        bad_col = bad_column.group(1)
-        similar_cols = find_similar_columns(bad_col, schema_info.get("data", []))
-        suggestions.extend(similar_cols)
-    
-    # Build corrected query if possible
-    corrected_query = None
-    if bad_column and suggestions:
-        corrected_query = query.replace(
-            bad_col, 
-            suggestions[0]  # Use first suggestion
-        )
-    
-    return {
-        "status": "error",
-        "message": error_msg,
-        "query": query,
-        "error_type": "ColumnResolutionError",
-        "suggested_columns": suggestions,
-        "corrected_query": corrected_query,
-        "schema_info": schema_info,
-        "recommendation": "Try using one of the suggested columns"
-    }
-
-def handle_syntax_error(error: Exception, query: str) -> Dict:
-    """Enhanced syntax error handling with DISTINCT fixes"""
-    error_msg = str(error)
-    
-    # Handle DISTINCT syntax issues
-    if "DISTINCT" in query.upper() and ("PARSE_SYNTAX_ERROR" in error_msg or "UNEXPECTED_TOKEN" in error_msg):
-        # Fix 1: Remove parentheses
-        fixed_query = re.sub(
-            r"DISTINCT\s*\(\s*([^)]+)\s*\)",
-            r"DISTINCT \1",
-            query,
-            flags=re.IGNORECASE
-        )
-        
-        # Fix 2: Ensure proper column separation
-        fixed_query = re.sub(
-            r"DISTINCT\s*([^,\s]+)\s*,\s*",
-            r"DISTINCT \1,",
-            fixed_query,
-            flags=re.IGNORECASE
-        )
-        
-        return {
-            "status": "error",
-            "message": error_msg,
-            "query": query,
-            "error_type": "SyntaxError",
-            "corrected_queries": [
-                fixed_query,
-                # Alternative suggestion without DISTINCT
-                query.replace("DISTINCT", "").replace("  ", " ")
-            ],
-            "recommendation": "Try removing parentheses from DISTINCT clause"
-        }
-    
-    return {
-        "status": "error",
-        "message": error_msg,
-        "query": query,
-        "error_type": "SyntaxError"
-    }
-
-
-def describe_table(table_name: str) -> Dict:
-    """Fetch schema information for a table"""
-    try:
-        with sql.connect(
-            server_hostname=DATABRICKS_SERVER_HOSTNAME,
-            http_path=DATABRICKS_HTTP_PATH,
-            access_token=DATABRICKS_ACCESS_TOKEN
-        ) as conn:
-            with conn.cursor() as cursor:
-                cursor.execute(f"DESCRIBE TABLE {table_name}")
-                columns = [desc[0] for desc in cursor.description]
-                data = [dict(zip(columns, row)) for row in cursor.fetchall()]
-                return {
-                    "status": "success",
-                    "columns": columns,
-                    "data": data,
-                    "table": table_name
-                }
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": str(e),
-            "table": table_name
-        }
-
-def find_similar_columns(target: str, schema_data: List[Dict]) -> List[str]:
-    """
-    Find columns similar to target in schema data
-    """
-    target_lower = target.lower()
-    similar = []
-    for col_info in schema_data:
-        col_name = col_info.get("col_name", "")
-        if target_lower in col_name.lower() or col_name.lower() in target_lower:
-            similar.append(col_name)
-    return similar
-
-
-# Updated tools.py with proper DISTINCT handling
-def validate_databricks_query(query: str) -> Dict:
-    """Validate SQL query syntax with enhanced DISTINCT handling"""
-    # Standard validation checks
-    if re.search(r"\b(DROP|DELETE|UPDATE|INSERT)\b", query, re.IGNORECASE):
-        return {
-            "is_valid": False,
-            "message": "Write operations are not allowed",
-            "suggestions": ["Use SELECT queries only"]
-        }
-    
-    # Check for valid table references
-    tables = re.findall(r"FROM\s+([^\s,;]+)", query, re.IGNORECASE)
-    if not tables:
-        return {
-            "is_valid": False,
-            "message": "No tables referenced in query",
-            "suggestions": ["Add a FROM clause with a valid table name"]
-        }
-
-    # Enhanced DISTINCT validation
-    if "DISTINCT" in query.upper():
-        distinct_pattern = re.compile(
-            r"SELECT\s+DISTINCT\s+(?:\(\s*([^)]+)\s*\)|([^,\s]+))", 
-            re.IGNORECASE
-        )
-        match = distinct_pattern.search(query)
-        
-        if not match:
             return {
-                "is_valid": False,
-                "message": "Invalid DISTINCT syntax",
-                "suggestions": [
-                    "Remove parentheses: DISTINCT trader",
-                    "For multiple columns: DISTINCT col1, col2"
-                ]
+                "status": "error",
+                "message": error_msg,
+                "details": result.get("details"),
+                "is_error": True
             }
         
-        # Extract column name whether in parentheses or not
-        column = match.group(1) or match.group(2)
-        if not column.strip():
-            return {
-                "is_valid": False,
-                "message": "DISTINCT with empty column list",
-                "suggestions": ["Specify columns after DISTINCT"]
-            }
-
-    return {
-        "is_valid": True,
-        "referenced_tables": tables
-    }
+        return {
+            "status": "success",
+            "response": "Here's the requested graph:",
+            "graph_data": result["graph"],
+            "type": "graph"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in generate_graph_from_prompt tool: {str(e)}")
+        return {
+            "status": "error",
+            "message": f"Graph generation failed: {str(e)}",
+            "details": traceback.format_exc(),
+            "is_error": True
+        }
 
 
 def get_insights_from_text(text_content: str) -> Dict:
     """
-    Analyze text content and extract insights
-    (Implementation matches what agentfactory.py expects)
+    Get meaningful insights from text content using the agent model.
+    This should analyze and summarize the key points from the text.
     """
+    logger.info("Starting get_insights_from_text tool")
+    
     if not text_content:
+        logger.warning("Empty content provided to get_insights_from_text")
         return {
             "status": "error",
             "message": "No content provided"
         }
 
     try:
-        # Basic text analysis - extend with your NLP logic
-        word_count = len(text_content.split())
-        char_count = len(text_content)
-        line_count = len(text_content.splitlines())
+        # Import AgentFactory here to avoid circular imports
+        from .agentfactory import AgentFactory
         
+        # Initialize agent factory
+        factory = AgentFactory()
+        
+        # Create a prompt that asks the agent to analyze the text
+        analysis_prompt = f"""
+        Analyze the following text and provide key insights, summaries, and important findings.
+        Focus on identifying:
+        - Main topics and themes
+        - Key statistics or numerical data
+        - Important names, dates, or entities
+        - Any notable trends or patterns
+        
+        Text to analyze:
+        {text_content}
+        
+        Provide your analysis in a structured JSON format with these sections:
+        - summary (brief overall summary)
+        - key_points (bulleted list of main points)
+        - notable_data (any important numbers or metrics)
+        - entities (important people, organizations, or locations mentioned)
+        """
+        
+        logger.debug(f"Sending analysis prompt to agent: {analysis_prompt[:200]}...")
+        
+        # Get response from agent
+        response = factory.process_request2(
+            prompt=analysis_prompt,
+            agent_mode="Detailed"  # Use detailed mode for comprehensive analysis
+        )
+        
+        if response.is_error:
+            logger.error(f"Agent failed to analyze text: {response.response}")
+            return {
+                "status": "error",
+                "message": "Failed to analyze text",
+                "details": response.response
+            }
+        
+        logger.info("Successfully generated insights from text")
         return {
             "status": "success",
             "insights": {
-                "word_count": word_count,
-                "character_count": char_count,
-                "line_count": line_count,
-                "content_start": text_content[:100] + "..." if len(text_content) > 100 else text_content
-            }
-        }
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": str(e)
-        }
-
-
-def generate_graph_data(query_results: Dict, prompt: str) -> Dict:
-    print("inside generate_graph_data")
-    if not query_results.get('data'):
-        print("inside generate_graph_data- query result DOESN'T HAVE data for graph")
-        return {
-            "status": "error",
-            "message": "No data available for graph",
-            "query_results": query_results
-        }
-    
-    print("inside generate_graph_data- query result HAVE data for graph")
-    try:
-        # 1. Create DataFrame
-        df = pd.DataFrame(query_results['data'])
-        print("\n=== DATAFRAME CREATED FROM QUERY RESULT DATA ===")
-        print(df)
-        
-        # 2. Validate columns
-        if len(df.columns) < 2:
-            print("graph data doesn't have all the columns")
-            return {
-                "status": "error",
-                "message": "Need at least 2 columns for graph (labels and values)",
-                "available_columns": df.columns.tolist()
-            }
-
-        # 3. Dynamically determine columns
-        # First column is always labels (deal identifiers)
-        label_col = df.columns[0]
-        print("# First column is always labels (deal identifiers)", label_col)
-        
-        # Second column is always values (realized value)
-        value_col = df.columns[1]
-        print("# Second column is always values (realized value)", value_col)
-        
-        # 4. Process data
-        chart_type = infer_chart_type(prompt)
-        top_n = infer_top_n(prompt)
-        
-        # Sort and limit
-        df = df.sort_values(by=value_col, ascending=False)
-        if top_n > 0:
-            df = df.head(top_n)
-        
-        # Get labels and values
-        labels = df[label_col].astype(str).tolist()
-        values = pd.to_numeric(df[value_col], errors='coerce').fillna(0).tolist()
-        
-        print("\n=== PREPARING GRAPH DATA ===")
-        print(f"graph Labels: {labels}")
-        print(f"graph Values: {values}")
-        
-        # Create a readable label for the dataset
-        dataset_label = f"Top {len(values)} by Realized Value"
-        if value_col != "realized_value":
-            # Try to make the label more descriptive
-            dataset_label = f"Top {len(values)} by {value_col.replace('_', ' ').title()}"
-        
-        print(f"graph datset_label: {dataset_label}")
-        return {
-            "status": "success",
-            "graphData": {
-                "type": chart_type,
-                "labels": labels,
-                "values": values,
-                "dataset_label": dataset_label,
-                "title": f"Top {len(values)} Deals by Realized Value"
+                "agent_response": response.response,
+                "structured_analysis": _extract_structured_insights(response.response)
             }
         }
         
     except Exception as e:
+        logger.error(f"Error in get_insights_from_text: {str(e)}")
+        logger.error(traceback.format_exc())
         return {
             "status": "error",
-            "message": f"Graph generation failed: {str(e)}",
-            "query_results": query_results,
-            "traceback": traceback.format_exc()
-        }
-    
-
-
-# Graph utility functions (from graph_utils.py)
-# tools.py
-def infer_y_axis_column(prompt: str, df: pd.DataFrame) -> str:
-    prompt_lower = prompt.lower()
-    
-    # 1. Check for exact column matches first
-    for col in df.columns:
-        col_lower = col.lower()
-        if any(kw in col_lower for kw in ["realized_pnl", "realized_value", "pnl"]):
-            if col_lower in prompt_lower:
-                return col
-    
-    # 2. Try common PnL variations using schema knowledge
-    pnl_variations = [
-        'ltd_realized_value', 'ytd_realized_value', 'mtd_realized_value',
-        'dtd_realized_value', 'realized_value_eur', 'trade_price'
-    ]
-    for variation in pnl_variations:
-        if variation in df.columns:
-            return variation
-    
-    # 3. Fallback to first numeric column
-    for col in df.columns:
-        if pd.api.types.is_numeric_dtype(df[col]):
-            return col
-    
-    # 4. Final fallback
-    return df.columns[1] if len(df.columns) > 1 else df.columns[0]
-
-
-def infer_chart_type(prompt: str) -> str:
-    if "line" in prompt.lower():
-        return "line"
-    elif "pie" in prompt.lower():
-        return "pie"
-    else: 
-        return "bar"
-
-
-def infer_top_n(prompt: str, default: int = 10) -> int:
-    match = re.search(r"top\s+(\d+)", prompt.lower())
-    if match:
-        return int(match.group(1))
-    return default
-
-
-def apply_prompt_filters(df: pd.DataFrame, prompt: str) -> pd.DataFrame:
-    prompt_lower = prompt.lower()
-
-    # Filter by trader
-    if 'trader' in df.columns:
-        for trader in df['trader'].dropna().unique():
-            if str(trader).lower() in prompt_lower:
-                df = df[df['trader'].str.lower() == trader.lower()]
-                break
-
-    # Filter by counterparty
-    if 'counterparty' in df.columns:
-        for cp in df['counterparty'].dropna().unique():
-            if str(cp.lower()) in prompt_lower:
-                df = df[df['counterparty'].str.lower() == cp.lower()]
-                break
-    return df
-
-
-def apply_time_filter(df: pd.DataFrame, prompt: str) -> pd.DataFrame:
-    """Apply time filters from natural language prompt"""
-    if 'latest_trade_date' not in df.columns:
-        return df
-
-    now = datetime.now()
-    prompt_lower = prompt.lower()
-
-    # Filter for "last month"
-    if "last month" in prompt_lower:
-        first_day = now.replace(day=1)
-        last_month_end = first_day - timedelta(days=1)
-        last_month_start = last_month_end.replace(day=1)
-        return df[(df['latest_trade_date'] >= last_month_start) & 
-                  (df['latest_trade_date'] <= last_month_end)]
-
-    # Month filter
-    months = ['january','february','march','april','may','june',
-              'july','august','september','october','november','december']
-    for i, month in enumerate(months):
-        if month in prompt_lower:
-            return df[df['latest_trade_date'].dt.month == i+1]
-    return df
-
-
-def generate_graph_from_prompt(prompt: str) -> Dict:
-    """
-    End-to-end pipeline for generating graph data from natural language prompts.
-    """
-    try:
-        print("=== generate_graph_from_prompt called ===")        
-        print(f"Original prompt: {prompt}")
-        print("# Extract data directly from prompt if available")
-        
-        if "The data is as follows:" in prompt.lower():
-            print("# parsing the graph data from prompt")
-            deal_nums = re.search(r"Deal Numbers: (\[[^\]]+\])", prompt)
-            pnl_values = re.search(r"Realized PnL Values: (\[[^\]]+\])", prompt)
-            
-            if deal_nums and pnl_values:
-                labels = json.loads(deal_nums.group(1))
-                values = json.loads(pnl_values.group(1))
-                values = [v/1e9 for v in values] # Convert to billions
-                
-                return {
-                    "status": "success",
-                    "response": "Here's the requested graph:",
-                    "graph_data": {
-                        "type": "bar",
-                        "labels": labels,
-                        "values": values,
-                        "dataset_label": "Realized PnL (in billions)",
-                        "title": "Top 5 Deals by Realized PnL"
-                    }
-                }
-            
-        print("# Fall back to SQL generation as no direct data in prompt")
-        from .agsqlquerygenerator import AGSQLQueryGenerator
-        print("# Step 1: Generating SQL from prompt")
-        sql_generator = AGSQLQueryGenerator()
-        sql_query_string = sql_generator.invoke(prompt)
-        sql_response = {
-            "status": "success",
-            "sql_query": sql_query_string
-        }
-        
-        print(f"\n Generated SQL From prompt \n{sql_query_string}\n")
-        
-        print("# Step 2: Run the SQL query")
-        query_results = execute_databricks_query(sql_response["sql_query"])
-        print(f"\n=== Generated SQL query execution result ===\n{json.dumps(query_results, indent=2)}\n")
-        
-        if query_results.get("status") != "success":
-            print("=== Generated SQL query execution Failed ===")
-            return {
-                "status": "error",
-                "message": "SQL execution failed",
-                "details": query_results
-            }
-
-        print("## Step 3: MAIN STEP Generate the graph data by calling generate_graph_data")
-        graph_result = generate_graph_data(query_results, prompt)
-        print(" ### GENERATED GRAPH DATA ### ===")
-        print("generated graph data")
-        print(graph_result)
-        print("generated graph data in json format")
-        print(json.dumps(graph_result, indent=2))
-        
-        # Return structured response expected by frontend
-        if graph_result.get("status") == "success":
-            print("graph data generation status is success")
-            return {
-                "status": "success",
-                "response": "Here's the requested graph:",
-                "graph_data": graph_result["graphData"]
-            }
-        else:
-            print("graph data generation status was not success")
-            return graph_result
-            
-    except Exception as e:
-        print(f"\n=== DEBUG: Exception ===\n{traceback.format_exc()}")
-        return {
-            "status": "error",
-            "message": f"Failed to generate graph: {str(e)}",
+            "message": f"Analysis failed: {str(e)}",
             "details": traceback.format_exc()
         }
-    
 
-
-def generate_graph_data_from_results(query_results: Dict, prompt: str) -> Dict:
+def _extract_structured_insights(agent_response: str) -> dict:
     """
-    Generate graph data directly from query results
-    (Fixed to properly handle query results)
+    Helper function to extract structured insights from agent's text response.
+    Attempts to parse JSON if present, otherwise structures the raw response.
     """
-    if query_results.get('status') != 'success':
-        return {
-            "status": "error",
-            "message": "Query execution failed",
-            "details": query_results
-        }
+    logger.debug("Attempting to extract structured insights from agent response")
     
-    if not query_results.get('data') or len(query_results['data']) == 0:
-        return {
-            "status": "error",
-            "message": "No data available for graph",
-            "query_results": query_results
-        }
-
     try:
-        # Create DataFrame from results
-        df = pd.DataFrame(query_results['data'])
+        # First try to find JSON in the response
+        json_match = re.search(r'```json\n(.+?)\n```', agent_response, re.DOTALL)
+        if json_match:
+            logger.debug("Found JSON in agent response")
+            return json.loads(json_match.group(1))
         
-        # Validate columns
-        if len(df.columns) < 2:
-            return {
-                "status": "error",
-                "message": "Need at least 2 columns for graph (labels and values)",
-                "available_columns": df.columns.tolist()
-            }
-
-        # First column is labels (deal identifiers)
-        label_col = df.columns[0]
-        
-        # Second column is values (realized value)
-        value_col = df.columns[1]
-        
-        # Process data
-        chart_type = infer_chart_type(prompt)
-        top_n = infer_top_n(prompt)
-        
-        # Sort and limit
-        df = df.sort_values(by=value_col, ascending=False)
-        if top_n > 0:
-            df = df.head(top_n)
-        
-        # Get labels and values
-        labels = df[label_col].astype(str).tolist()
-        values = pd.to_numeric(df[value_col], errors='coerce').fillna(0).tolist()
-        
-        # Create a readable label
-        dataset_label = f"Top {len(values)} by Realized Value"
-        if value_col != "realized_value":
-            # Try to make the label more descriptive
-            dataset_label = f"Top {len(values)} by {value_col.replace('_', ' ').title()}"
-        
+        # If no JSON, try to parse as raw text
+        logger.debug("No JSON found, structuring raw response")
         return {
-            "type": chart_type,
-            "labels": labels,
-            "values": values,
-            "dataset_label": dataset_label,
-            "title": f"Top {len(values)} Deals by Realized Value"
+            "summary": agent_response.split("\n")[0] if "\n" in agent_response else agent_response,
+            "key_points": [line.strip() for line in agent_response.split("\n") if line.strip()],
+            "source": "agent_analysis"
         }
-        
     except Exception as e:
+        logger.warning(f"Could not fully structure insights: {str(e)}")
+        return {
+            "raw_response": agent_response,
+            "error": "Could not fully structure insights"
+        }
+
+def execute_databricks_query(sql_query: str) -> Dict:
+    logger.info("Inside execute_databricks_query Starting execute_databricks_query tool")
+    try:
+        result = GraphService.execute_sql_query(sql_query)
+        if result.get("status") == "success":
+            logger.info(f"Query executed successfully. Returned {result.get('row_count', 0)} rows")
+        else:
+            logger.error(f"Query execution failed: {result.get('message')}")
+        return result
+    except Exception as e:
+        logger.error(f"Error in execute_databricks_query tool: {str(e)}")
+        logger.error(traceback.format_exc())
         return {
             "status": "error",
-            "message": f"Graph generation failed: {str(e)}",
-            "query_results": query_results,
-            "traceback": traceback.format_exc()
+            "message": f"Tool execution failed: {str(e)}",
+            "details": traceback.format_exc()
         }
-
 
 # Maintain empty user_functions dict as expected by agentfactory.py
 user_functions = {}

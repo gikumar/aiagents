@@ -1,10 +1,9 @@
 # backend/app/agentfactory.py
-
-# backend/app/agentfactory.py
-
 from dataclasses import dataclass
-import re
-from typing import Any, Dict, Optional, List  # <-- Added List import here
+import threading
+import logging
+import json
+from datetime import datetime, timedelta
 from azure.identity import DefaultAzureCredential
 from azure.ai.agents import AgentsClient
 from azure.ai.agents.models import FunctionTool, ToolSet, ListSortOrder, MessageRole
@@ -21,19 +20,24 @@ from .tools import (
     generate_graph_from_prompt
 )
 import traceback
+import ast
 import json
 import time
-from datetime import datetime, timedelta
+from typing import Optional, Any, Dict
+from app.utility.thread_cleanup_scheduler import register_agent_instance
 
-import logging
-from .tools import generate_graph_data_from_results 
-
-from app.utility.thread_cleanup_scheduler import register_agent_instance  # <-- Added registration import
-
-# Get the logger for the specific library
-logger = logging.getLogger('azure-ai-generative')
-# Set the logging level to WARNING or a higher level like ERROR
+# Set up logger
+logger = logging.getLogger(__name__)
 logger.setLevel(logging.ERROR)
+
+# Create console handler with higher level
+ch = logging.StreamHandler()
+ch.setLevel(logging.INFO)
+
+# Create formatter and add it to the handlers
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+ch.setFormatter(formatter)
+logger.addHandler(ch)
 
 @dataclass
 class AgentResponse:
@@ -57,9 +61,10 @@ class AgentResponse:
         }
 
 class AgentFactory:
-    STALE_RUN_THRESHOLD = timedelta(minutes=5)
+    STALE_RUN_THRESHOLD = timedelta(minutes=15)
     
     def __init__(self):
+        print("Initializing AgentFactory")
         self.agent = None
         self.agent_client = AgentsClient(
             endpoint=PROJECT_ENDPOINT,
@@ -73,37 +78,39 @@ class AgentFactory:
         self.last_request_time = {}
         self.last_cleanup = datetime.now()
         self.cleanup_interval = timedelta(minutes=10)
-
-        # Register this instance with the cleanup scheduler registry
         register_agent_instance("OrchestratorAgent", self)
+        print("AgentFactory initialized successfully")
 
     def mark_run_active(self, thread_id: str):
+        print(f"Marking run {thread_id} as active")
         self.active_runs[thread_id] = datetime.now()
 
     def remove_run(self, thread_id: str):
         if thread_id in self.active_runs:
+            print(f"Removing run {thread_id} from active runs")
             del self.active_runs[thread_id]
 
     def get_active_thread_ids(self):
-        """Return thread IDs of runs active within the stale threshold window."""
         now = datetime.now()
         active_ids = [
             tid for tid, start_time in self.active_runs.items()
             if now - start_time < self.STALE_RUN_THRESHOLD
         ]
+        print(f"Active thread IDs: {active_ids}")
         return active_ids
 
     def cleanup_stale_runs(self):
-        """Remove runs older than STALE_RUN_THRESHOLD."""
         now = datetime.now()
         stale = [tid for tid, t in self.active_runs.items() if now - t > self.STALE_RUN_THRESHOLD]
-        for tid in stale:
-            del self.active_runs[tid]
+        if stale:
+            print(f"Cleaning up stale runs: {stale}")
+            for tid in stale:
+                del self.active_runs[tid]
 
     def get_or_create_agent(self) -> str:
-        print("0001A inside get_or_create_agent")
-        
+        print("Getting or creating agent")
         if self.agent is not None:
+            print("Using existing agent instance")
             return self.agent.id
 
         registered_tools = [
@@ -111,18 +118,19 @@ class AgentFactory:
             get_insights_from_text,
             generate_graph_from_prompt
         ]
+        print(f"Registered tools: {[t.__name__ for t in registered_tools]}")
 
         existing_agents = list(self.agent_client.list_agents())
         for agent in existing_agents:
             if agent.name == orchestrator_agent_name:
-                print(f"0001 Reusing existing agent: {agent.name} ({agent.id})")
+                print(f"Found existing agent: {agent.name} ({agent.id})")
                 self.toolset = ToolSet()
                 self.toolset.add(FunctionTool(registered_tools))
                 self.agent_client.enable_auto_function_calls(self.toolset)
                 self.agent = agent
                 return self.agent.id
 
-        print(f"0002 Creating new agent: {orchestrator_agent_name}")
+        print(f"Creating new agent: {orchestrator_agent_name}")
         self.toolset = ToolSet()
         self.toolset.add(FunctionTool(registered_tools))
         self.agent_client.enable_auto_function_calls(self.toolset)
@@ -135,18 +143,8 @@ class AgentFactory:
             top_p=0.89,
             temperature=0.01
         )
+        print(f"Created new agent with ID: {self.agent.id}")
         return self.agent.id
-
-
-    def run_tool(self, tool_name: str, args: dict) -> str:
-        for tool in self.toolset._tools:
-            print("inside run_tool for loop")
-            if hasattr(tool, "functions"):
-                for fn in tool.functions:
-                    if fn.__name__ == tool_name:
-                        return json.dumps(fn(**args))
-        raise ValueError(f"No tool found for name: {tool_name}")
-
 
     def process_request2(
         self,
@@ -157,36 +155,19 @@ class AgentFactory:
         thread_id: Optional[str] = None,
         max_retries: int = 3
     ) -> AgentResponse:
+        print(f"Processing request with mode: {agent_mode}")
         try:
             if datetime.now() - self.last_cleanup > self.cleanup_interval:
+                print("Running cleanup of stale runs")
                 self.cleanup_stale_runs()
                 self.last_cleanup = datetime.now()
             
             agent_id = self.get_or_create_agent()
             thread = self._get_thread_with_retry(thread_id, max_retries)
             if isinstance(thread, AgentResponse):
+                print("Thread is busy with existing run")
                 return thread
             
-            print("## 0003 STARTING process_request2")
-            # Keep test sample for "show sample graph" requests
-            if "show sample graph" in prompt.lower():
-                print("## 0004 INSIDE AGENT FACTORY -- show sample graph")
-                return AgentResponse(
-                    response="Here's a sample bar chart",
-                    thread_id=thread.id if thread else None,
-                    input_tokens=123,
-                    output_tokens=456,
-                    graph_data={
-                        "type": "bar",
-                        "labels": ['19400', '19401', '19402'],
-                        "values": [251210, 3155000, 232275],
-                        "title": "Sample Bar Chart",
-                        "dataset_label": "Realized Value (EUR)"
-                    },
-                    response_type="graph",
-                    is_error=False
-                )
-        
             behavior_instruction = agent_behavior_instructions.get(agent_mode, "")
             full_instruction = f"""
                 [Orchestrator Instructions]
@@ -195,8 +176,10 @@ class AgentFactory:
                 [Behavior Instructions - Mode: {agent_mode}]
                 {behavior_instruction}
                 """.strip()
+            print(f"Using instructions:\n{full_instruction[:200]}...")
 
             if not thread_id:
+                print("Sending initial instruction message")
                 self._send_message_with_retry(
                     thread.id,
                     "assistant",
@@ -206,8 +189,10 @@ class AgentFactory:
 
             user_message_content = prompt
             if file_content:
+                print("Appending file content to message")
                 user_message_content += f"\n\n[FILE_CONTENT_START]\n{file_content}\n[FILE_CONTENT_END]"
 
+            print("Sending user message")
             self._send_message_with_retry(
                 thread.id,
                 "user",
@@ -216,31 +201,22 @@ class AgentFactory:
             )
 
             self.mark_run_active(thread.id)
-
-
+            print("Creating and processing run")
             run = self.agent_client.runs.create_and_process(
                 thread_id=thread.id,
                 agent_id=agent_id
             )
 
-            # Get tool outputs for graph generation
-            #graph_data = self._get_tool_output(run, "generate_graph_from_prompt")
-            graph_data = generate_graph_from_prompt(prompt)
-            
-            
-            print("graph data in agent fatcory after calling get_tool_output")
-            print(graph_data)
-
-
+            print("Processing run results")
             return self._process_run_results(
                 run,
                 thread.id,
-                max_retries,
-                graph_data  # Pass graph data to results processor
+                max_retries
             )
 
         except Exception as e:
-            print(f" 0005 Exception in process_request2:\n{traceback.format_exc()}")
+            print(f"Error in process_request2: {str(e)}")
+            print(traceback.format_exc())
             error_msg = str(e)
             if "active run" in error_msg.lower():
                 error_msg = "Please wait while I finish processing your previous request."
@@ -251,192 +227,111 @@ class AgentFactory:
             )
         finally:
             if 'thread' in locals():
-                self.remove_run(thread.id)  # Always remove run tracking
+                self.remove_run(thread.id)
+    
 
 
-    def _get_tool_output(self, run, tool_name: str) -> Optional[Dict]:
-        """Extracts output from a specific tool call in the run"""
+    def _parse_output(self, output):
+        if isinstance(output, dict):
+            return output
+        if isinstance(output, str):
+            try:
+                return json.loads(output)
+            except json.JSONDecodeError:
+                try:
+                    return ast.literal_eval(output)
+                except Exception as e:
+                    print(f"Failed to parse output string: {e}")
+                    return output
+        return output
+
+
+    def _get_tool_output(self, run, tool_name: str) -> Optional[dict]:
+        print(f"Getting tool output for: {tool_name}")
+        print(f"_get_tool_output call run details: run_id={run.id}, thread_id={run.thread_id}")
+
         try:
-            print("extracting the tool output for = ", tool_name)
             steps = list(self.agent_client.run_steps.list(
                 run_id=run.id,
                 thread_id=run.thread_id
             ))
-            
+
             for step in steps:
-                if step.type == "tool":
-                    print("for tool name: ", tool_name)
-                    if hasattr(step, 'tool_call') and step.tool_call.tool_name == tool_name:
-                        output = step.tool_call.output
-                        if isinstance(output, str):
-                            return json.loads(output)
-                        return output
-                    elif hasattr(step, 'step_details') and hasattr(step.step_details, 'tool_calls'):
-                        for tool_call in step.step_details.tool_calls:
-                            if tool_call.function.name == tool_name:
-                                output = tool_call.function.output
-                                if isinstance(output, str):
-                                    return json.loads(output)
-                                return output
+                print(f"Inspecting step: run_id={getattr(step, 'run_id', None)}, thread_id={getattr(step, 'thread_id', None)}, kind={getattr(step, 'kind', None)}")
+
+                # Updated condition: use kind instead of type
+                if getattr(step, 'kind', '').lower() == "tool":
+                    print("inside-11")
+                    attrs = getattr(step, 'attributes', {})
+                    if isinstance(attrs, dict):
+                        print("inside-22")
+                        func = attrs.get('function')
+                        if func and func.get('name') == tool_name:
+                            print("inside-33")
+                            output = func.get('output')
+                            print(f"Found output in step.attributes.function: {output[:100] if isinstance(output, str) else output}")
+                            return self._parse_output(output)
+
+                # Additional fallback: if step.tool_call exists and matches
+                if hasattr(step, 'tool_call'):
+                    print("inside-44")
+                    tc = step.tool_call
+                    if getattr(tc, 'tool_name', None) == tool_name:
+                        print("inside-55")
+                        output = getattr(tc, 'output', None)
+                        print(f"Found output in step.tool_call: {output[:100] if isinstance(output, str) else output}")
+                        return self._parse_output(output)
+
+                # Additional fallback: step.step_details.tool_calls
+                if hasattr(step, 'step_details') and hasattr(step.step_details, 'tool_calls'):
+                    print("inside-66")
+                    for tool_call in step.step_details.tool_calls:
+                        func = getattr(tool_call, 'function', None)
+                        if func and func.get('name') == tool_name:
+                            print("inside-77")
+                            output = func.get('output')
+                            print(f"Found output in step.step_details.tool_calls: {output[:100] if isinstance(output, str) else output}")
+                            return self._parse_output(output)
+
         except Exception as e:
             print(f"Error getting tool output: {str(e)}")
-            traceback.print_exc()
+            import traceback
+            print(traceback.format_exc())
+
         return None
-    
-        
-    def _process_tool_outputs_for_graph(self, run, prompt: str) -> Optional[Dict]:
-        """Extracts and processes tool outputs for graph generation"""
-        graph_data = None
-        try:
-            # Get all steps in the run
-            steps = list(run.steps)
-            
-            # Find the last tool call that generated graph data
-            for step in reversed(steps):
-                if step.type == "tool" and step.tool_name == "generate_graph_from_prompt":
-                    try:
-                        # Parse tool output
-                        tool_output = json.loads(step.output)
-                        
-                        # Extract graph data if available
-                        if tool_output.get("status") == "success" and tool_output.get("graph_data"):
-                            graph_data = tool_output["graph_data"]
-                            break
-                            
-                    except json.JSONDecodeError:
-                        print(f"Error parsing tool output: {step.output}")
-                        continue
-                        
-        except Exception as e:
-            print(f"Error processing tool outputs: {str(e)}")
-            
-        return graph_data
-
-
-    def _get_thread_with_retry(self, thread_id: Optional[str], max_retries: int):
-        for attempt in range(max_retries):
-            try:
-                if thread_id:
-                    active_runs = list(self.agent_client.runs.list(
-                        thread_id=thread_id,
-                        status="in_progress"
-                    ))
-                    if active_runs:
-                        if attempt == max_retries - 1:
-                            return AgentResponse(
-                                response="Please wait while I finish processing your previous request.",
-                                thread_id=thread_id,
-                                is_error=False
-                            )
-                        time.sleep(1 * (attempt + 1))
-                        continue
-                    return self.agent_client.threads.get(thread_id)
-                elif self.current_thread:
-                    return self.current_thread
-                else:
-                    thread = self.agent_client.threads.create()
-                    self.current_thread = thread
-                    return thread
-            except Exception:
-                if attempt == max_retries - 1:
-                    raise
-                time.sleep(1 * (attempt + 1))
-
-
-    def _send_message_with_retry(self, thread_id: str, role: str, content: str, max_retries: int):
-        for attempt in range(max_retries):
-            try:
-                self.agent_client.messages.create(
-                    thread_id=thread_id,
-                    role=role,
-                    content=content
-                )
-                return
-            except Exception as e:
-                if "active run" in str(e) and attempt < max_retries - 1:
-                    time.sleep(1 * (attempt + 1))
-                    continue
-                raise
-
 
     def _process_run_results(
-            self,
-            run,
-            thread_id,
-            max_retries,
-            graph_data: Optional[Dict] = None
-        ) -> AgentResponse:
-        print("##  calling _process_run_results after graph data is generated")
-    
+        self,
+        run,
+        thread_id: str,
+        max_retries: int
+    ) -> AgentResponse:
+        print("Processing run results")
         prompt_tokens = run.usage.prompt_tokens or 0
         completion_tokens = run.usage.completion_tokens or 0
+        print(f"Token usage - Input: {prompt_tokens}, Output: {completion_tokens}")
 
-        if run.status == "failed":
-            print("##  run had a failed status ##")
-            return AgentResponse(
-                response=f"An error occurred: {run.last_error.message if run.last_error else 'Unknown error'}",
+        # Check for graph tool output first
+        graph_output = self._get_tool_output(run, "generate_graph_from_prompt")
+        
+        print("#1-1-0# graphoutput received in _process_run_results before status check", graph_output)
+        #print("#1-1-0# graphoutput received in _process_run_results before status check", graph_output.get("status"))
+        #print("#1-1-0# graphoutput received in _process_run_results before status check", graph_output.graph_output.get("graph_data"))
+
+        if graph_output and graph_output.get("status") == "success":
+            print("Returning graph response")
+            agr = AgentResponse(
+                response="Here's the requested graph:",
                 thread_id=thread_id,
-                is_error=True,
                 input_tokens=prompt_tokens,
-                output_tokens=completion_tokens
+                output_tokens=completion_tokens,
+                graph_data=graph_output.get("graph_data"),
+                response_type="graph"
             )
-            
-        if graph_data is None:
-            print("graph data received as None in process_run_results")
-            try:
-                print("# Method 1 to generate graph data: Try to get graph data from run steps")
-                try:
-                    steps = list(self.agent_client.run_steps.list(
-                        run_id=run.id,
-                        thread_id=run.thread_id
-                    ))
-                
-                    for step in steps:
-                        if step.type == "tool":
-                            if hasattr(step, 'tool_call') and step.tool_call.tool_name == "generate_graph_from_prompt":
-                                print("## has step as tool_call -- generating the graph data form generate_graph_from_prompt tool run")
-                                graph_data = json.loads(step.tool_call.output)
-                                print("## Found graph data in generate_graph_from_prompt tool call")
-                                print("graph_data")
-                                print(graph_data)
-                                break
-                            elif hasattr(step, 'step_details') and hasattr(step.step_details, 'tool_calls'):
-                                print("## has step as step_details -- generating the graph data form generate_graph_from_prompt tool run")
-                                for tool_call in step.step_details.tool_calls:
-                                    if tool_call.function.name == "generate_graph_from_prompt":
-                                        print("## found in step_details for generate_graph_from_prompt tool run")
-                                        graph_data = json.loads(tool_call.function.output)
-                                        print("graph_data")
-                                        print(graph_data)
-                                        break
-                except Exception as e:
-                    print(f"Error extracting graph data from run steps: {str(e)}")
-                    traceback.print_exc()
+            print("#1-1-1# printing the agentresponse object in _process_run_results before retruning to process_request2", agr)
+            return agr
 
-                
-                print("# Method 2: Try to parse from message content if tools failed")
-                messages = list(self.agent_client.messages.list(
-                    thread_id=thread_id,
-                    order=ListSortOrder.ASCENDING
-                ))
-            
-                for message in reversed(messages):
-                    if message.role == MessageRole.AGENT and message.text_messages:
-                        agent_response = message.text_messages[-1].text.value
-                        print("check if data is as follow found in agent response")
-                        if "data is as follows" in agent_response:
-                            print("yes- data is as follow found in agent response, now extract it..")
-                            graph_data = self._extract_data_from_response(agent_response)
-                            print("extracted graph data")
-                            print(graph_data)
-                            if graph_data:
-                                print("## Extracted graph data is not blank")
-                                break
-            except Exception as e:
-                print(f"Error processing graph data in process run results: {str(e)}")
-                traceback.print_exc()
-
-        print("# Preapring the agent FINAL response")
+        # Get final agent message
         messages = None
         for attempt in range(max_retries):
             try:
@@ -456,13 +351,13 @@ class AgentFactory:
                 content = message.text_messages[-1].text.value
                 if "[Orchestrator Instructions]" not in content:
                     agent_response = content
-                    print(f"##  AGENT FINAL RESPONSE MESSAGE -- agent_response: {agent_response}")
+                    print(f"Agent response: {content[:200]}...")
                     break
                     
         if agent_response is None:
-            print("##  AGENT FINAL RESPONSE MESSAGE is None")
+            print("No direct agent response found")
             return AgentResponse(
-                response="Agent did not provide a direct response. Check logs for tool outputs.",
+                response="Agent did not provide a direct response",
                 thread_id=thread_id,
                 is_error=False,
                 input_tokens=prompt_tokens,
@@ -472,38 +367,7 @@ class AgentFactory:
         if thread_id in self.active_runs:
             del self.active_runs[thread_id]
 
-        print("# Preapring final agent response with graph data if available")
-        if graph_data and (graph_data.get("status") == "success" or "labels" in graph_data):
-            print("##  Preapring final agent response --graph data is availble with status success or has labels")
-            print("## Preapring final agent response --retriving graph data in any naming convention")
-            final_graph_data = graph_data.get("graphData") or graph_data.get("graph_data") or graph_data
-            
-            print("### PRINTING FINAL GRAPH DATA #####")
-            print(final_graph_data)
-
-            print("# NOW CHECKING graph data HAS required ATTRIBUTES AVAILABLE")
-            if not all(key in final_graph_data for key in ["labels", "values"]):
-                print("## FINAL Graph data IS missing required fields, falling back to text")
-                return AgentResponse(
-                    response=agent_response,
-                    thread_id=thread_id,
-                    input_tokens=prompt_tokens,
-                    output_tokens=completion_tokens,
-                    response_type="text",
-                    is_error=False
-                )
-            return AgentResponse(
-                response=agent_response,
-                thread_id=thread_id,
-                input_tokens=prompt_tokens,
-                output_tokens=completion_tokens,
-                graph_data=final_graph_data,
-                response_type="graph",
-                is_error=False
-            )
-                            
-        # Final fallback: Return text response
-        print("##  0012 RETURNING TEXT RESPONSE")
+        print("Returning text response")
         return AgentResponse(
             response=agent_response,
             thread_id=thread_id,
@@ -512,36 +376,57 @@ class AgentFactory:
             response_type="text",
             is_error=False
         )
-    
-    def _extract_data_from_response(self, response_text: str) -> Optional[Dict]:
-        """Extract graph data directly from response text when tools fail"""
-        try:
-            print("# Example pattern matching for data format")
-            deal_nums_match = re.search(r"Deal Numbers:\s*(\[[^\]]+\])", response_text)
-            pnl_values_match = re.search(r"Realized PnL Values:\s*(\[[^\]]+\])", response_text)
-            
-            if deal_nums_match and pnl_values_match:
-                labels = json.loads(deal_nums_match.group(1))
-                values = json.loads(pnl_values_match.group(1))
-                values = [v / 1e9 for v in values]  # Convert to billions
-                
-                return {
-                    "type": "bar",
-                    "labels": labels,
-                    "values": values,
-                    "dataset_label": "Realized PnL (in billions)",
-                    "title": "Top Deals by Realized PnL"
-                }
-        except Exception as e:
-            print(f"Error extracting data from response: {str(e)}")
-        return None
+
+    def _get_thread_with_retry(self, thread_id: Optional[str], max_retries: int):
+        print(f"Getting thread with ID: {thread_id}")
+        for attempt in range(max_retries):
+            try:
+                if thread_id:
+                    active_runs = list(self.agent_client.runs.list(
+                        thread_id=thread_id,
+                        status="in_progress"
+                    ))
+                    if active_runs:
+                        if attempt == max_retries - 1:
+                            print("Thread is busy with active run")
+                            return AgentResponse(
+                                response="Please wait while I finish processing your previous request.",
+                                thread_id=thread_id,
+                                is_error=False
+                            )
+                        time.sleep(1 * (attempt + 1))
+                        continue
+                    return self.agent_client.threads.get(thread_id)
+                elif self.current_thread:
+                    print("Using current thread")
+                    return self.current_thread
+                else:
+                    print("Creating new thread")
+                    thread = self.agent_client.threads.create()
+                    self.current_thread = thread
+                    return thread
+            except Exception:
+                if attempt == max_retries - 1:
+                    raise
+                time.sleep(1 * (attempt + 1))
+
+    def _send_message_with_retry(self, thread_id: str, role: str, content: str, max_retries: int):
+        print(f"Sending {role} message to thread {thread_id}")
+        for attempt in range(max_retries):
+            try:
+                self.agent_client.messages.create(
+                    thread_id=thread_id,
+                    role=role,
+                    content=content
+                )
+                return
+            except Exception as e:
+                if "active run" in str(e) and attempt < max_retries - 1:
+                    time.sleep(1 * (attempt + 1))
+                    continue
+                raise
 
     @staticmethod
     def is_graph_prompt(prompt: str) -> bool:
         graph_keywords = ["generate graph", "show me a graph", "plot", "visualize", "graph", "chart", "trend"]
         return any(k in prompt.lower() for k in graph_keywords)
-
-    @staticmethod
-    def is_pie_chart_prompt(prompt: str) -> bool:
-        pie_keywords = ["pie chart", "distribution", "share", "percentage", "proportion"]
-        return any(k in prompt.lower() for k in pie_keywords)

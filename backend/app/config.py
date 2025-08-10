@@ -1,4 +1,4 @@
-# backend/app/config.py (updated)
+# backend/app/config.py
 from dotenv import load_dotenv
 import os
 load_dotenv()

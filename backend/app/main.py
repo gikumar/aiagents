@@ -6,30 +6,35 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 import sys
 from contextlib import asynccontextmanager
+import logging
 from .agentfactory import AgentFactory
 from .utility.thread_cleanup_scheduler import start_thread_cleanup_scheduler
 
-# Add the current directory to the Python path
-sys.path.append(os.path.dirname(__file__))
+# Set up logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.ERROR)
 
-# Initialize the agent factory
+# Create console handler with higher level
+ch = logging.StreamHandler()
+ch.setLevel(logging.INFO)
+
+# Create formatter and add it to the handlers
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+ch.setFormatter(formatter)
+logger.addHandler(ch)
+
+sys.path.append(os.path.dirname(__file__))
 agent_factory = AgentFactory()
 
-# --- FastAPI Lifespan Events ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("Starting up... Initializing agent factory and cleanup scheduler")
-    
-    # Start thread cleanup scheduler
+    logger.info("Starting application lifespan")
     start_thread_cleanup_scheduler()
-    
-    yield  # Application runs here
-    
-    print("Shutting down...")  # Add any cleanup here if needed
+    yield
+    logger.info("Application shutdown")
 
 app = FastAPI(lifespan=lifespan)
 
-# --- CORS Configuration ---
 origins = [
     "http://localhost",
     "http://localhost:3000",
@@ -44,9 +49,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Models ---
 class Message(BaseModel):
-    role: str  # "user" or "agent"
+    role: str
     content: str
     isError: Optional[bool] = False
 
@@ -64,21 +68,20 @@ class AskResponse(BaseModel):
     graph_data: Optional[Dict[str, Any]] = None
     status: str
 
-# --- API Endpoints ---
 @app.post("/ask", response_model=AskResponse)
 async def ask_agent(request: AskRequest):
-    """Enhanced endpoint with graph support and better error handling"""
+    logger.info("Received /ask request")
     try:
-        # Input validation
         if not request.prompt and not request.file_content:
+            logger.warning("Empty request received")
             raise HTTPException(
                 status_code=400,
                 detail="Either prompt or file content must be provided"
             )
 
-        # Convert chat history to the format expected by AgentFactory
         formatted_history = None
         if request.chat_history:
+            logger.debug(f"Processing chat history with {len(request.chat_history)} messages")
             formatted_history = [
                 {
                     "role": msg.role,
@@ -87,7 +90,7 @@ async def ask_agent(request: AskRequest):
                 for msg in request.chat_history
             ]
 
-        # Process request using AgentFactory
+        logger.debug(f"Processing request with mode: {request.agentMode}")
         response = agent_factory.process_request2(
             prompt=request.prompt,
             agent_mode=request.agentMode,
@@ -95,6 +98,7 @@ async def ask_agent(request: AskRequest):
             chat_history=formatted_history
         )
         
+        logger.info("Request processed successfully")
         return {
             "response": response.response,
             "thread_id": response.thread_id,
@@ -105,12 +109,12 @@ async def ask_agent(request: AskRequest):
         }
 
     except HTTPException as http_err:
-        # Re-raise HTTP exceptions (like 404, 401)
+        logger.error(f"HTTP error in /ask: {http_err.detail}")
         raise http_err
         
     except Exception as e:
-        # Log unexpected errors
-        print(f"Unexpected error in /ask: {str(e)}", flush=True)
+        logger.error(f"Unexpected error in /ask: {str(e)}")
+        logger.error(traceback.format_exc())
         raise HTTPException(
             status_code=500,
             detail=f"Internal server error: {str(e)}"
@@ -118,10 +122,10 @@ async def ask_agent(request: AskRequest):
 
 @app.get("/")
 async def health_check():
-    """Enhanced health check endpoint"""
+    logger.debug("Health check endpoint called")
     return {
         "status": "healthy",
         "service": "AI Agent Backend",
         "version": "1.1",
-        "features": ["text", "graph_generation", "nl_to_sql"] # Added nl_to_sql feature
+        "features": ["text", "graph_generation", "nl_to_sql"]
     }
