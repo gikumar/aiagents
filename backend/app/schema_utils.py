@@ -10,7 +10,7 @@ import logging
 
 # Set up logger
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.ERROR)
+logger.setLevel(logging.INFO)
 
 # Create console handler with higher level
 ch = logging.StreamHandler()
@@ -24,12 +24,12 @@ logger.addHandler(ch)
 SCHEMA_FILE = os.path.join(os.path.dirname(__file__), "cache", "databricks_schema.json")
 
 def load_schema() -> dict:
-    logger.info(f"Schema Loader: load schema")
+    logger.info(f"🚀Schema Loader: load schema")
     schema_file = Path(__file__).parent / "cache/databricks_schema.json"
-    logger.info(f"[DEBUG] Loading schema from: {schema_file}")
+    logger.info(f"🚀[DEBUG] Loading schema from: {schema_file}")
     with open(schema_file) as f:
         schema = json.load(f)
-    logger.info(f"[DEBUG] Loaded {len(schema)} tables from schema")
+    logger.info(f"🚀[DEBUG] Loaded {len(schema)} tables from schema")
     return schema
 
 def fetch_and_save_schema():

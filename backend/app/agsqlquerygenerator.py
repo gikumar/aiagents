@@ -68,7 +68,7 @@ class AGSQLQueryGenerator:
             return self.agent
 
     def invoke(self, prompt: str) -> str:
-        logger.info(f"Invoking SQL agent for prompt: {prompt}")
+        logger.info(f"🚀Invoking SQL agent for prompt: {prompt}")
         thread = None
         try:
             agent = self.get_or_create_sql_agent()
@@ -166,4 +166,4 @@ class AGSQLQueryGenerator:
         }
         after_count = len(self.active_runs)
         if before_count != after_count:
-            logger.info(f"Cleaned up stale AGSQLQueryGenerator runs: {before_count - after_count} removed")
+            logger.info(f"🚀Cleaned up stale AGSQLQueryGenerator runs: {before_count - after_count} removed")

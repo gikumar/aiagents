@@ -9,7 +9,7 @@ import logging
 
 # Set up logger
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.ERROR)
+logger.setLevel(logging.INFO)
 
 # Create console handler with higher level
 ch = logging.StreamHandler()
@@ -31,7 +31,7 @@ SCHEMA = config.DATABRICK_SCHEMA
 
 def fetch_schema_from_databricks():
     try:
-        logger.info(f"Fetching schema from databricks")
+        logger.info(f"🚀Fetching schema from databricks")
         with databricks.sql.connect(
             server_hostname=DATABRICKS_SERVER_HOSTNAME,
             http_path=DATABRICKS_HTTP_PATH,
@@ -60,12 +60,12 @@ def fetch_schema_from_databricks():
             with open(SCHEMA_FILE, "w") as f:
                 json.dump(schema_dict, f, indent=2)
 
-            logger.info(f"Schema successfully written to {SCHEMA_FILE}")
+            logger.info(f"🚀Schema successfully written to {SCHEMA_FILE}")
 
     except OperationalError as e:
-        logger.info(f"Databricks connection failed: {e}")
+        logger.info(f"🚀Databricks connection failed: {e}")
     except Exception as e:
-        logger.info(f"Unexpected error: {e}")
+        logger.info(f"🚀Unexpected error: {e}")
 
 def fetch_table_columns():
     fetch_schema_from_databricks()

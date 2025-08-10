@@ -6,7 +6,7 @@ import logging
 
 # Set up logger
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.ERROR)
+logger.setLevel(logging.INFO)
 
 # Create console handler with higher level
 ch = logging.StreamHandler()
@@ -21,12 +21,12 @@ logger.addHandler(ch)
 SCHEMA_FILE = os.path.join(os.path.dirname(__file__), "cache", "databricks_schema.json")
 
 def load_schema():
-    logger.info(f"SQL Query Generator Instrcutions: load schema")
+    logger.info(f"🚀SQL Query Generator Instrcutions: load schema")
     with open(SCHEMA_FILE, "r") as f:
         return json.load(f)
 
 def build_sql_instruction():
-    logger.info(f"SQL Query Generator Instrcutions: building databricks connection")
+    logger.info(f"🚀SQL Query Generator Instrcutions: building databricks connection")
     schema = load_schema()
 
     instruction = """

@@ -28,7 +28,7 @@ from app.utility.thread_cleanup_scheduler import register_agent_instance
 
 # Set up logger
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.ERROR)
+logger.setLevel(logging.INFO)
 
 # Create console handler with higher level
 ch = logging.StreamHandler()
@@ -82,12 +82,12 @@ class AgentFactory:
         logger.info("AgentFactory initialized successfully")
 
     def mark_run_active(self, thread_id: str):
-        logger.info(f"Marking run {thread_id} as active")
+        logger.info(f"🚀Marking run {thread_id} as active")
         self.active_runs[thread_id] = datetime.now()
 
     def remove_run(self, thread_id: str):
         if thread_id in self.active_runs:
-            logger.info(f"Removing run {thread_id} from active runs")
+            logger.info(f"🚀Removing run {thread_id} from active runs")
             del self.active_runs[thread_id]
 
     def get_active_thread_ids(self):
@@ -96,14 +96,14 @@ class AgentFactory:
             tid for tid, start_time in self.active_runs.items()
             if now - start_time < self.STALE_RUN_THRESHOLD
         ]
-        logger.info(f"Active thread IDs: {active_ids}")
+        logger.info(f"🚀Active thread IDs: {active_ids}")
         return active_ids
 
     def cleanup_stale_runs(self):
         now = datetime.now()
         stale = [tid for tid, t in self.active_runs.items() if now - t > self.STALE_RUN_THRESHOLD]
         if stale:
-            logger.info(f"Cleaning up stale runs: {stale}")
+            logger.info(f"🚀Cleaning up stale runs: {stale}")
             for tid in stale:
                 del self.active_runs[tid]
 
@@ -118,19 +118,19 @@ class AgentFactory:
             get_insights_from_text,
             generate_graph_from_prompt
         ]
-        logger.info(f"Registered tools: {[t.__name__ for t in registered_tools]}")
+        logger.info(f"🚀Registered tools: {[t.__name__ for t in registered_tools]}")
 
         existing_agents = list(self.agent_client.list_agents())
         for agent in existing_agents:
             if agent.name == orchestrator_agent_name:
-                logger.info(f"Found existing agent: {agent.name} ({agent.id})")
+                logger.info(f"🚀Found existing agent: {agent.name} ({agent.id})")
                 self.toolset = ToolSet()
                 self.toolset.add(FunctionTool(registered_tools))
                 self.agent_client.enable_auto_function_calls(self.toolset)
                 self.agent = agent
                 return self.agent.id
 
-        logger.info(f"Creating new agent: {orchestrator_agent_name}")
+        logger.info(f"🚀Creating new agent: {orchestrator_agent_name}")
         self.toolset = ToolSet()
         self.toolset.add(FunctionTool(registered_tools))
         self.agent_client.enable_auto_function_calls(self.toolset)
@@ -143,7 +143,7 @@ class AgentFactory:
             top_p=0.89,
             temperature=0.01
         )
-        logger.info(f"Created new agent with ID: {self.agent.id}")
+        logger.info(f"🚀Created new agent with ID: {self.agent.id}")
         return self.agent.id
 
     def process_request2(
@@ -155,7 +155,7 @@ class AgentFactory:
         thread_id: Optional[str] = None,
         max_retries: int = 3
     ) -> AgentResponse:
-        logger.info(f"Processing request with mode: {agent_mode}")
+        logger.info(f"🚀Processing request with mode: {agent_mode}")
         try:
             if datetime.now() - self.last_cleanup > self.cleanup_interval:
                 logger.info("Running cleanup of stale runs")
@@ -176,7 +176,7 @@ class AgentFactory:
                 [Behavior Instructions - Mode: {agent_mode}]
                 {behavior_instruction}
                 """.strip()
-            logger.info(f"Using instructions:\n{full_instruction[:200]}...")
+            logger.info(f"🚀Using instructions:\n{full_instruction[:200]}...")
 
             if not thread_id:
                 logger.info("Sending initial instruction message")
@@ -215,7 +215,7 @@ class AgentFactory:
             )
 
         except Exception as e:
-            logger.info(f"Error in process_request2: {str(e)}")
+            logger.info(f"🚀Error in process_request2: {str(e)}")
             logger.info(traceback.format_exc())
             error_msg = str(e)
             if "active run" in error_msg.lower():
@@ -241,14 +241,14 @@ class AgentFactory:
                 try:
                     return ast.literal_eval(output)
                 except Exception as e:
-                    logger.info(f"Failed to parse output string: {e}")
+                    logger.info(f"🚀Failed to parse output string: {e}")
                     return output
         return output
 
 
     def _get_tool_output(self, run, tool_name: str) -> Optional[dict]:
-        logger.info(f"Getting tool output for: {tool_name}")
-        logger.info(f"_get_tool_output call run details: run_id={run.id}, thread_id={run.thread_id}")
+        logger.info(f"🚀Getting tool output for: {tool_name}")
+        logger.info(f"🚀_get_tool_output call run details: run_id={run.id}, thread_id={run.thread_id}")
 
         try:
             steps = list(self.agent_client.run_steps.list(
@@ -257,7 +257,7 @@ class AgentFactory:
             ))
 
             for step in steps:
-                logger.info(f"Inspecting step: run_id={getattr(step, 'run_id', None)}, thread_id={getattr(step, 'thread_id', None)}, kind={getattr(step, 'kind', None)}")
+                logger.info(f"🚀Inspecting step: run_id={getattr(step, 'run_id', None)}, thread_id={getattr(step, 'thread_id', None)}, kind={getattr(step, 'kind', None)}")
 
                 # check step kind
                 if getattr(step, 'kind', '').lower() == "tool":
@@ -269,7 +269,7 @@ class AgentFactory:
                         if func and func.get('name') == tool_name:
                             logger.info("_get_tool_output: tool name matched for graph data")
                             output = func.get('output')
-                            logger.info(f"Found output in step.attributes.function: {output[:100] if isinstance(output, str) else output}")
+                            logger.info(f"🚀Found output in step.attributes.function: {output[:100] if isinstance(output, str) else output}")
                             return self._parse_output(output)
 
                 # Additional fallback: if step.tool_call exists and matches
@@ -279,7 +279,7 @@ class AgentFactory:
                     if getattr(tc, 'tool_name', None) == tool_name:
                         logger.info("_get_tool_output: checking graph data in step.tool_call: tool name matched")
                         output = getattr(tc, 'output', None)
-                        logger.info(f"Found output in step.tool_call: {output[:100] if isinstance(output, str) else output}")
+                        logger.info(f"🚀Found output in step.tool_call: {output[:100] if isinstance(output, str) else output}")
                         return self._parse_output(output)
 
                 # Additional fallback: step.step_details.tool_calls
@@ -290,11 +290,11 @@ class AgentFactory:
                         if func and func.get('name') == tool_name:
                             logger.info("_get_tool_output: checking graph data in step.step_details.tool_calls: function name matched")
                             output = func.get('output')
-                            logger.info(f"Found output in step.step_details.tool_calls: {output[:100] if isinstance(output, str) else output}")
+                            logger.info(f"🚀Found output in step.step_details.tool_calls: {output[:100] if isinstance(output, str) else output}")
                             return self._parse_output(output)
 
         except Exception as e:
-            logger.info(f"Error getting tool output: {str(e)}")
+            logger.info(f"🚀Error getting tool output: {str(e)}")
             import traceback
             logger.info(traceback.format_exc())
 
@@ -309,7 +309,7 @@ class AgentFactory:
         logger.info("Processing run results")
         prompt_tokens = run.usage.prompt_tokens or 0
         completion_tokens = run.usage.completion_tokens or 0
-        logger.info(f"Token usage - Input: {prompt_tokens}, Output: {completion_tokens}")
+        logger.info(f"🚀Token usage - Input: {prompt_tokens}, Output: {completion_tokens}")
 
         # Check for graph tool output first
         graph_output = self._get_tool_output(run, "generate_graph_from_prompt")
@@ -349,7 +349,7 @@ class AgentFactory:
                 content = message.text_messages[-1].text.value
                 if "[Orchestrator Instructions]" not in content:
                     agent_response = content
-                    logger.info(f"Agent response: {content[:200]}...")
+                    logger.info(f"🚀Agent response: {content[:200]}...")
                     break
                     
         if agent_response is None:
@@ -376,7 +376,7 @@ class AgentFactory:
         )
 
     def _get_thread_with_retry(self, thread_id: Optional[str], max_retries: int):
-        logger.info(f"Getting thread with ID: {thread_id}")
+        logger.info(f"🚀Getting thread with ID: {thread_id}")
         for attempt in range(max_retries):
             try:
                 if thread_id:

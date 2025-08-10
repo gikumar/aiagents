@@ -3,8 +3,30 @@ import pandas as pd
 import re
 from datetime import datetime, timedelta
 from . import config
+import logging
+from .config import (
+    DATABRICKS_SERVER_HOSTNAME,
+    DATABRICKS_ACCESS_TOKEN,
+    DATABRICKS_HTTP_PATH
+)
+from .schema_utils import load_schema
+
+# Set up logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Create console handler with higher level
+ch = logging.StreamHandler()
+ch.setLevel(logging.INFO)
+
+# Create formatter and add it to the handlers
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+ch.setFormatter(formatter)
+logger.addHandler(ch)
+
 
 def infer_y_axis_column(prompt: str, df: pd.DataFrame) -> str:
+    logger.info("🚀 infer_y_axis_column")
     prompt_lower = prompt.lower()
     for col in df.columns:
         if col != "deal_num" and col in prompt_lower:
@@ -12,6 +34,7 @@ def infer_y_axis_column(prompt: str, df: pd.DataFrame) -> str:
     return "total_realized_pnl"
 
 def infer_chart_type(prompt: str) -> str:
+    logger.info("🚀 infer_chart_type")
     if "line" in prompt.lower():
         return "line"
     elif "pie" in prompt.lower():
@@ -21,12 +44,15 @@ def infer_chart_type(prompt: str) -> str:
     
 
 def infer_top_n(prompt: str, default: int = 10) -> int:
+    logger.info("🚀 infer_top_n")
     match = re.search(r"top\s+(\d+)", prompt.lower())
     if match:
         return int(match.group(1))
     return default
 
 def apply_prompt_filters(df: pd.DataFrame, prompt: str) -> pd.DataFrame:
+    logger.info("🚀 apply_prompt_filters")
+
     prompt_lower = prompt.lower()
 
     # Filter by trader
@@ -51,6 +77,7 @@ def apply_prompt_filters(df: pd.DataFrame, prompt: str) -> pd.DataFrame:
 
 # Parse common natural language time filters from the prompt
 def apply_time_filter(df, prompt):
+    logger.info("🚀 apply_time_filter")
     now = datetime.now()
 
     # Ensure latest_trade_date is datetime
