@@ -1,17 +1,32 @@
-#Sharing next file just keep it and do not analyze until i confirm I have shared all the files
 #/backedn/app/sql_query_generator_instruction.py
 
 import json
 import os
+import logging
+
+# Set up logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.ERROR)
+
+# Create console handler with higher level
+ch = logging.StreamHandler()
+ch.setLevel(logging.INFO)
+
+# Create formatter and add it to the handlers
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+ch.setFormatter(formatter)
+logger.addHandler(ch)
 
 # Path to the cached schema file
 SCHEMA_FILE = os.path.join(os.path.dirname(__file__), "cache", "databricks_schema.json")
 
 def load_schema():
+    logger.info(f"SQL Query Generator Instrcutions: load schema")
     with open(SCHEMA_FILE, "r") as f:
         return json.load(f)
 
 def build_sql_instruction():
+    logger.info(f"SQL Query Generator Instrcutions: building databricks connection")
     schema = load_schema()
 
     instruction = """

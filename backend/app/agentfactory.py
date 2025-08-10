@@ -64,7 +64,7 @@ class AgentFactory:
     STALE_RUN_THRESHOLD = timedelta(minutes=15)
     
     def __init__(self):
-        print("Initializing AgentFactory")
+        logger.info("Initializing AgentFactory")
         self.agent = None
         self.agent_client = AgentsClient(
             endpoint=PROJECT_ENDPOINT,
@@ -79,15 +79,15 @@ class AgentFactory:
         self.last_cleanup = datetime.now()
         self.cleanup_interval = timedelta(minutes=10)
         register_agent_instance("OrchestratorAgent", self)
-        print("AgentFactory initialized successfully")
+        logger.info("AgentFactory initialized successfully")
 
     def mark_run_active(self, thread_id: str):
-        print(f"Marking run {thread_id} as active")
+        logger.info(f"Marking run {thread_id} as active")
         self.active_runs[thread_id] = datetime.now()
 
     def remove_run(self, thread_id: str):
         if thread_id in self.active_runs:
-            print(f"Removing run {thread_id} from active runs")
+            logger.info(f"Removing run {thread_id} from active runs")
             del self.active_runs[thread_id]
 
     def get_active_thread_ids(self):
@@ -96,21 +96,21 @@ class AgentFactory:
             tid for tid, start_time in self.active_runs.items()
             if now - start_time < self.STALE_RUN_THRESHOLD
         ]
-        print(f"Active thread IDs: {active_ids}")
+        logger.info(f"Active thread IDs: {active_ids}")
         return active_ids
 
     def cleanup_stale_runs(self):
         now = datetime.now()
         stale = [tid for tid, t in self.active_runs.items() if now - t > self.STALE_RUN_THRESHOLD]
         if stale:
-            print(f"Cleaning up stale runs: {stale}")
+            logger.info(f"Cleaning up stale runs: {stale}")
             for tid in stale:
                 del self.active_runs[tid]
 
     def get_or_create_agent(self) -> str:
-        print("Getting or creating agent")
+        logger.info("Getting or creating agent")
         if self.agent is not None:
-            print("Using existing agent instance")
+            logger.info("Using existing agent instance")
             return self.agent.id
 
         registered_tools = [
@@ -118,19 +118,19 @@ class AgentFactory:
             get_insights_from_text,
             generate_graph_from_prompt
         ]
-        print(f"Registered tools: {[t.__name__ for t in registered_tools]}")
+        logger.info(f"Registered tools: {[t.__name__ for t in registered_tools]}")
 
         existing_agents = list(self.agent_client.list_agents())
         for agent in existing_agents:
             if agent.name == orchestrator_agent_name:
-                print(f"Found existing agent: {agent.name} ({agent.id})")
+                logger.info(f"Found existing agent: {agent.name} ({agent.id})")
                 self.toolset = ToolSet()
                 self.toolset.add(FunctionTool(registered_tools))
                 self.agent_client.enable_auto_function_calls(self.toolset)
                 self.agent = agent
                 return self.agent.id
 
-        print(f"Creating new agent: {orchestrator_agent_name}")
+        logger.info(f"Creating new agent: {orchestrator_agent_name}")
         self.toolset = ToolSet()
         self.toolset.add(FunctionTool(registered_tools))
         self.agent_client.enable_auto_function_calls(self.toolset)
@@ -143,7 +143,7 @@ class AgentFactory:
             top_p=0.89,
             temperature=0.01
         )
-        print(f"Created new agent with ID: {self.agent.id}")
+        logger.info(f"Created new agent with ID: {self.agent.id}")
         return self.agent.id
 
     def process_request2(
@@ -155,17 +155,17 @@ class AgentFactory:
         thread_id: Optional[str] = None,
         max_retries: int = 3
     ) -> AgentResponse:
-        print(f"Processing request with mode: {agent_mode}")
+        logger.info(f"Processing request with mode: {agent_mode}")
         try:
             if datetime.now() - self.last_cleanup > self.cleanup_interval:
-                print("Running cleanup of stale runs")
+                logger.info("Running cleanup of stale runs")
                 self.cleanup_stale_runs()
                 self.last_cleanup = datetime.now()
             
             agent_id = self.get_or_create_agent()
             thread = self._get_thread_with_retry(thread_id, max_retries)
             if isinstance(thread, AgentResponse):
-                print("Thread is busy with existing run")
+                logger.info("Thread is busy with existing run")
                 return thread
             
             behavior_instruction = agent_behavior_instructions.get(agent_mode, "")
@@ -176,10 +176,10 @@ class AgentFactory:
                 [Behavior Instructions - Mode: {agent_mode}]
                 {behavior_instruction}
                 """.strip()
-            print(f"Using instructions:\n{full_instruction[:200]}...")
+            logger.info(f"Using instructions:\n{full_instruction[:200]}...")
 
             if not thread_id:
-                print("Sending initial instruction message")
+                logger.info("Sending initial instruction message")
                 self._send_message_with_retry(
                     thread.id,
                     "assistant",
@@ -189,10 +189,10 @@ class AgentFactory:
 
             user_message_content = prompt
             if file_content:
-                print("Appending file content to message")
+                logger.info("Appending file content to message")
                 user_message_content += f"\n\n[FILE_CONTENT_START]\n{file_content}\n[FILE_CONTENT_END]"
 
-            print("Sending user message")
+            logger.info("Sending user message")
             self._send_message_with_retry(
                 thread.id,
                 "user",
@@ -201,13 +201,13 @@ class AgentFactory:
             )
 
             self.mark_run_active(thread.id)
-            print("Creating and processing run")
+            logger.info("Creating and processing run")
             run = self.agent_client.runs.create_and_process(
                 thread_id=thread.id,
                 agent_id=agent_id
             )
 
-            print("Processing run results")
+            logger.info("Processing run results")
             return self._process_run_results(
                 run,
                 thread.id,
@@ -215,8 +215,8 @@ class AgentFactory:
             )
 
         except Exception as e:
-            print(f"Error in process_request2: {str(e)}")
-            print(traceback.format_exc())
+            logger.info(f"Error in process_request2: {str(e)}")
+            logger.info(traceback.format_exc())
             error_msg = str(e)
             if "active run" in error_msg.lower():
                 error_msg = "Please wait while I finish processing your previous request."
@@ -241,14 +241,14 @@ class AgentFactory:
                 try:
                     return ast.literal_eval(output)
                 except Exception as e:
-                    print(f"Failed to parse output string: {e}")
+                    logger.info(f"Failed to parse output string: {e}")
                     return output
         return output
 
 
     def _get_tool_output(self, run, tool_name: str) -> Optional[dict]:
-        print(f"Getting tool output for: {tool_name}")
-        print(f"_get_tool_output call run details: run_id={run.id}, thread_id={run.thread_id}")
+        logger.info(f"Getting tool output for: {tool_name}")
+        logger.info(f"_get_tool_output call run details: run_id={run.id}, thread_id={run.thread_id}")
 
         try:
             steps = list(self.agent_client.run_steps.list(
@@ -257,46 +257,46 @@ class AgentFactory:
             ))
 
             for step in steps:
-                print(f"Inspecting step: run_id={getattr(step, 'run_id', None)}, thread_id={getattr(step, 'thread_id', None)}, kind={getattr(step, 'kind', None)}")
+                logger.info(f"Inspecting step: run_id={getattr(step, 'run_id', None)}, thread_id={getattr(step, 'thread_id', None)}, kind={getattr(step, 'kind', None)}")
 
-                # Updated condition: use kind instead of type
+                # check step kind
                 if getattr(step, 'kind', '').lower() == "tool":
-                    print("inside-11")
+                    logger.info("_get_tool_output: check step kind")
                     attrs = getattr(step, 'attributes', {})
                     if isinstance(attrs, dict):
-                        print("inside-22")
+                        logger.info("_get_tool_output: graph data is of dict type")
                         func = attrs.get('function')
                         if func and func.get('name') == tool_name:
-                            print("inside-33")
+                            logger.info("_get_tool_output: tool name matched for graph data")
                             output = func.get('output')
-                            print(f"Found output in step.attributes.function: {output[:100] if isinstance(output, str) else output}")
+                            logger.info(f"Found output in step.attributes.function: {output[:100] if isinstance(output, str) else output}")
                             return self._parse_output(output)
 
                 # Additional fallback: if step.tool_call exists and matches
                 if hasattr(step, 'tool_call'):
-                    print("inside-44")
+                    logger.info("_get_tool_output: checking graph data in step.tool_call")
                     tc = step.tool_call
                     if getattr(tc, 'tool_name', None) == tool_name:
-                        print("inside-55")
+                        logger.info("_get_tool_output: checking graph data in step.tool_call: tool name matched")
                         output = getattr(tc, 'output', None)
-                        print(f"Found output in step.tool_call: {output[:100] if isinstance(output, str) else output}")
+                        logger.info(f"Found output in step.tool_call: {output[:100] if isinstance(output, str) else output}")
                         return self._parse_output(output)
 
                 # Additional fallback: step.step_details.tool_calls
                 if hasattr(step, 'step_details') and hasattr(step.step_details, 'tool_calls'):
-                    print("inside-66")
+                    logger.info("_get_tool_output: checking graph data in step.step_details.tool_calls")
                     for tool_call in step.step_details.tool_calls:
                         func = getattr(tool_call, 'function', None)
                         if func and func.get('name') == tool_name:
-                            print("inside-77")
+                            logger.info("_get_tool_output: checking graph data in step.step_details.tool_calls: function name matched")
                             output = func.get('output')
-                            print(f"Found output in step.step_details.tool_calls: {output[:100] if isinstance(output, str) else output}")
+                            logger.info(f"Found output in step.step_details.tool_calls: {output[:100] if isinstance(output, str) else output}")
                             return self._parse_output(output)
 
         except Exception as e:
-            print(f"Error getting tool output: {str(e)}")
+            logger.info(f"Error getting tool output: {str(e)}")
             import traceback
-            print(traceback.format_exc())
+            logger.info(traceback.format_exc())
 
         return None
 
@@ -306,20 +306,18 @@ class AgentFactory:
         thread_id: str,
         max_retries: int
     ) -> AgentResponse:
-        print("Processing run results")
+        logger.info("Processing run results")
         prompt_tokens = run.usage.prompt_tokens or 0
         completion_tokens = run.usage.completion_tokens or 0
-        print(f"Token usage - Input: {prompt_tokens}, Output: {completion_tokens}")
+        logger.info(f"Token usage - Input: {prompt_tokens}, Output: {completion_tokens}")
 
         # Check for graph tool output first
         graph_output = self._get_tool_output(run, "generate_graph_from_prompt")
         
-        print("#1-1-0# graphoutput received in _process_run_results before status check", graph_output)
-        #print("#1-1-0# graphoutput received in _process_run_results before status check", graph_output.get("status"))
-        #print("#1-1-0# graphoutput received in _process_run_results before status check", graph_output.graph_output.get("graph_data"))
+        logger.info("#1-1-0# graphoutput received in _process_run_results before status check", graph_output)
 
         if graph_output and graph_output.get("status") == "success":
-            print("Returning graph response")
+            logger.info("Returning graph response")
             agr = AgentResponse(
                 response="Here's the requested graph:",
                 thread_id=thread_id,
@@ -328,7 +326,7 @@ class AgentFactory:
                 graph_data=graph_output.get("graph_data"),
                 response_type="graph"
             )
-            print("#1-1-1# printing the agentresponse object in _process_run_results before retruning to process_request2", agr)
+            logger.info("#1-1-1# printing the agentresponse object in _process_run_results before retruning to process_request2", agr)
             return agr
 
         # Get final agent message
@@ -351,11 +349,11 @@ class AgentFactory:
                 content = message.text_messages[-1].text.value
                 if "[Orchestrator Instructions]" not in content:
                     agent_response = content
-                    print(f"Agent response: {content[:200]}...")
+                    logger.info(f"Agent response: {content[:200]}...")
                     break
                     
         if agent_response is None:
-            print("No direct agent response found")
+            logger.info("No direct agent response found")
             return AgentResponse(
                 response="Agent did not provide a direct response",
                 thread_id=thread_id,
@@ -367,7 +365,7 @@ class AgentFactory:
         if thread_id in self.active_runs:
             del self.active_runs[thread_id]
 
-        print("Returning text response")
+        logger.info("Returning text response")
         return AgentResponse(
             response=agent_response,
             thread_id=thread_id,
@@ -378,7 +376,7 @@ class AgentFactory:
         )
 
     def _get_thread_with_retry(self, thread_id: Optional[str], max_retries: int):
-        print(f"Getting thread with ID: {thread_id}")
+        logger.info(f"Getting thread with ID: {thread_id}")
         for attempt in range(max_retries):
             try:
                 if thread_id:
@@ -388,7 +386,7 @@ class AgentFactory:
                     ))
                     if active_runs:
                         if attempt == max_retries - 1:
-                            print("Thread is busy with active run")
+                            logger.info("Thread is busy with active run")
                             return AgentResponse(
                                 response="Please wait while I finish processing your previous request.",
                                 thread_id=thread_id,
@@ -398,10 +396,10 @@ class AgentFactory:
                         continue
                     return self.agent_client.threads.get(thread_id)
                 elif self.current_thread:
-                    print("Using current thread")
+                    logger.info("Using current thread")
                     return self.current_thread
                 else:
-                    print("Creating new thread")
+                    logger.info("Creating new thread")
                     thread = self.agent_client.threads.create()
                     self.current_thread = thread
                     return thread
@@ -411,7 +409,7 @@ class AgentFactory:
                 time.sleep(1 * (attempt + 1))
 
     def _send_message_with_retry(self, thread_id: str, role: str, content: str, max_retries: int):
-        print(f"Sending {role} message to thread {thread_id}")
+        logger.info(f"Sending {role} message to thread {thread_id}")
         for attempt in range(max_retries):
             try:
                 self.agent_client.messages.create(

@@ -1,4 +1,3 @@
-#Do not begin processing or making changes until I have shared all the files and explicitly confirm that I am done.
 # backend/app/agsqlquerygenerator.py
 
 import threading
@@ -19,7 +18,7 @@ from .configagsqlquerygenerator import (
 from .sql_query_generator_instruction import build_sql_instruction
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.NullHandler())
+logging.basicConfig(level=logging.info)
 
 class AGSQLQueryGenerator:
     _lock = threading.Lock()
@@ -44,6 +43,7 @@ class AGSQLQueryGenerator:
         register_agent_instance("SQLQueryGeneratorAgent", self)
 
         logger.info("AgentsClient initialized successfully")
+
 
     def get_or_create_sql_agent(self):
         if self.agent is not None:

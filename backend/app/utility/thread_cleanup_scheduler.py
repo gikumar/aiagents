@@ -105,7 +105,7 @@ def run_thread_cleanup_all_agents():
 
         except Exception as e:
             logger.error(f"[{agent_name}] Agent init or cleanup error: {e}", exc_info=True)
-    logger.info("✅ Thread cleanup cycle complete.\n")
+    logger.info("Thread cleanup cycle complete.\n")
 
 # -----------------------------------------------------------------------------
 # Scheduler Startup (if run standalone)
@@ -115,7 +115,7 @@ if __name__ == "__main__":
     scheduler = BackgroundScheduler()
     scheduler.add_job(run_thread_cleanup_all_agents, 'interval', minutes=CLEANUP_INTERVAL_MINUTES)
     scheduler.start()
-    logger.info(f"🚀 Thread cleanup scheduler started (every {CLEANUP_INTERVAL_MINUTES} min)")
+    logger.info(f"Thread cleanup scheduler started (every {CLEANUP_INTERVAL_MINUTES} min)")
 
     try:
         while True:
@@ -133,4 +133,4 @@ def start_thread_cleanup_scheduler():
         scheduler_instance = BackgroundScheduler()
         scheduler_instance.add_job(run_thread_cleanup_all_agents, 'interval', minutes=CLEANUP_INTERVAL_MINUTES)
         scheduler_instance.start()
-        logger.info(f"🚀 Thread cleanup scheduler started (every {CLEANUP_INTERVAL_MINUTES} min)")
+        logger.info(f"Thread cleanup scheduler started (every {CLEANUP_INTERVAL_MINUTES} min)")
