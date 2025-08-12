@@ -55,6 +55,7 @@ QUERY GUIDELINES:
 21. When user prompt include request about trader, use the trader column.
 22. when user prompt include request to generate the garph but does not mention by what consider the deals graph by ltd_realized_value for example consider "provide me graph of top 10 deal" as
 "provide me graph for top 10 deals by ltd_realized_value"
+23. If you don't find the column name in any one table, make sure to check in other available tables as well.
 """
 
 agent_behavior_instructions = {

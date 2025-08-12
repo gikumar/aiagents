@@ -1,8 +1,12 @@
-fastapi == 0.95.*
-uvicorn == 0.19.*
-beanie == 1.11.*
-python-dotenv == 0.20.*
-azure-identity == 1.21.0
-azure-keyvault-secrets == 4.4.*
-opentelemetry-instrumentation-fastapi == 0.42b0
-azure-monitor-opentelemetry-exporter == 1.0.0b19
+APScheduler==3.11.0
+azure_storage==0.37.0
+databricks==0.2
+databricks_agents==0.22.1
+databricks_connect==16.1.6
+databricks_sdk==0.61.0
+databricks_sdk==0.62.0
+databricks_vectorsearch==0.56
+fastapi==0.116.1
+pandas==2.3.1
+pydantic==1.10.22
+python-dotenv==1.1.1
