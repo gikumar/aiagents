@@ -632,6 +632,7 @@ const ChatWindow = () => {
 
     try {
       const res = await axios.post("http://localhost:8000/ask", payload);
+      console.log("ask response", (res))
       log.info("Received API response:", {
         status: res.data.status,
         thread_id: res.data.thread_id,
