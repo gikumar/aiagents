@@ -9,7 +9,7 @@ from .graph_service import GraphService
 
 # Set up logger
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.ERROR)
+logger.setLevel(logging.INFO)
 
 # Create console handler with higher level
 ch = logging.StreamHandler()
@@ -67,7 +67,7 @@ def generate_graph_from_prompt(prompt: str) -> Dict:
         }
         
     except Exception as e:
-        logger.error(f"Error in generate_graph_from_prompt tool: {str(e)}")
+        logger.error(f"🚀🚀Error in generate_graph_from_prompt tool: {str(e)}")
         return {
             "status": "error",
             "message": f"Graph generation failed: {str(e)}",
@@ -125,7 +125,7 @@ def get_insights_from_text(text_content: str) -> Dict:
         )
         
         if response.is_error:
-            logger.error(f"Agent failed to analyze text: {response.response}")
+            logger.error(f"🚀Agent failed to analyze text: {response.response}")
             return {
                 "status": "error",
                 "message": "Failed to analyze text",
@@ -142,7 +142,7 @@ def get_insights_from_text(text_content: str) -> Dict:
         }
         
     except Exception as e:
-        logger.error(f"Error in get_insights_from_text: {str(e)}")
+        logger.error(f"🚀Error in get_insights_from_text: {str(e)}")
         logger.error(traceback.format_exc())
         return {
             "status": "error",
@@ -183,12 +183,12 @@ def execute_databricks_query(sql_query: str) -> Dict:
     try:
         result = GraphService.execute_sql_query(sql_query)
         if result.get("status") == "success":
-            logger.info(f"Query executed successfully. Returned {result.get('row_count', 0)} rows")
+            logger.info(f"🚀Query executed successfully. Returned {result.get('row_count', 0)} rows")
         else:
-            logger.error(f"Query execution failed: {result.get('message')}")
+            logger.error(f"🚀Query execution failed: {result.get('message')}")
         return result
     except Exception as e:
-        logger.error(f"Error in execute_databricks_query tool: {str(e)}")
+        logger.error(f"🚀Error in execute_databricks_query tool: {str(e)}")
         logger.error(traceback.format_exc())
         return {
             "status": "error",

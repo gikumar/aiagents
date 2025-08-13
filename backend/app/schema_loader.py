@@ -1,4 +1,3 @@
-#Sharing next file just keep it and do not analyze until i confirm I have shared all the files
 # backend/app/schema_loader.py
 
 import os
@@ -6,10 +5,23 @@ import json
 import databricks.sql
 from databricks.sql import OperationalError
 from . import config
+import logging
+
+# Set up logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Create console handler with higher level
+ch = logging.StreamHandler()
+ch.setLevel(logging.INFO)
+
+# Create formatter and add it to the handlers
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+ch.setFormatter(formatter)
+logger.addHandler(ch)
 
 SCHEMA_FILE = os.path.join(os.path.dirname(__file__), "cache", "databricks_schema.json")
 
-# ✅ FIX: Don't add commas!
 DATABRICKS_SERVER_HOSTNAME = config.DATABRICKS_SERVER_HOSTNAME
 DATABRICKS_HTTP_PATH = config.DATABRICKS_HTTP_PATH
 DATABRICKS_ACCESS_TOKEN = config.DATABRICKS_ACCESS_TOKEN
@@ -19,6 +31,7 @@ SCHEMA = config.DATABRICK_SCHEMA
 
 def fetch_schema_from_databricks():
     try:
+        logger.info(f"🚀Fetching schema from databricks")
         with databricks.sql.connect(
             server_hostname=DATABRICKS_SERVER_HOSTNAME,
             http_path=DATABRICKS_HTTP_PATH,
@@ -47,12 +60,12 @@ def fetch_schema_from_databricks():
             with open(SCHEMA_FILE, "w") as f:
                 json.dump(schema_dict, f, indent=2)
 
-            print(f"✅ Schema successfully written to {SCHEMA_FILE}")
+            logger.info(f"🚀Schema successfully written to {SCHEMA_FILE}")
 
     except OperationalError as e:
-        print(f"❌ Databricks connection failed: {e}")
+        logger.info(f"🚀Databricks connection failed: {e}")
     except Exception as e:
-        print(f"❌ Unexpected error: {e}")
+        logger.info(f"🚀Unexpected error: {e}")
 
 def fetch_table_columns():
     fetch_schema_from_databricks()

@@ -30,33 +30,33 @@ logger.addHandler(ch)
 class GraphService:
     @staticmethod
     def infer_chart_type(prompt: str) -> str:
-        logger.debug(f"Inferring chart type from prompt: {prompt[:100]}...")
+        logger.info(f"🚀Inferring chart type from prompt: {prompt[:100]}...")
         if "line" in prompt.lower():
-            logger.debug("Chart type inferred as: line")
+            logger.info("🚀Chart type inferred as: line")
             return "line"
         elif "pie" in prompt.lower():
-            logger.debug("Chart type inferred as: pie")
+            logger.info("🚀Chart type inferred as: pie")
             return "pie"
         else: 
-            logger.debug("Chart type inferred as: bar (default)")
+            logger.info("🚀Chart type inferred as: bar (default)")
             return "bar"
 
     @staticmethod
     def infer_top_n(prompt: str, default: int = 10) -> int:
-        logger.debug(f"Checking for top N value in prompt: {prompt[:100]}...")
+        logger.info(f"🚀Checking for top N value in prompt: {prompt[:100]}...")
         match = re.search(r"top\s+(\d+)", prompt.lower())
         if match:
             top_n = int(match.group(1))
-            logger.debug(f"Found top_n value: {top_n}")
+            logger.info(f"🚀 Found top_n value: {top_n}")
             return top_n
-        logger.debug(f"Using default top_n value: {default}")
+        logger.info(f"🚀 Using default top_n value: {default}")
         return default
 
     @staticmethod
     def generate_from_query_results(query_results: dict, prompt: str) -> dict:
         logger.info("Starting graph generation from query results")
         if not query_results.get('data'):
-            logger.error("No data available in query results for graph generation")
+            logger.error("🚀 No data available in query results for graph generation")
             return {
                 "status": "error",
                 "message": "No data available for graph",
@@ -64,9 +64,9 @@ class GraphService:
             }
         
         try:
-            logger.debug("Creating DataFrame from query results")
+            logger.info("🚀Creating DataFrame from query results")
             df = pd.DataFrame(query_results['data'])
-            logger.debug(f"DataFrame created with shape: {df.shape}")
+            logger.info(f"🚀DataFrame created with shape: {df.shape}")
             
             if len(df.columns) < 2:
                 logger.error(f"Insufficient columns for graph. Available: {df.columns.tolist()}")
@@ -78,19 +78,19 @@ class GraphService:
 
             label_col = df.columns[0]
             value_col = df.columns[1]
-            logger.debug(f"Using columns - Labels: {label_col}, Values: {value_col}")
+            logger.info(f"🚀Using columns - Labels: {label_col}, Values: {value_col}")
             
             chart_type = GraphService.infer_chart_type(prompt)
             top_n = GraphService.infer_top_n(prompt)
             
-            logger.debug(f"Sorting by {value_col} and taking top {top_n}")
+            logger.info(f"🚀Sorting by {value_col} and taking top {top_n}")
             df = df.sort_values(by=value_col, ascending=False)
             if top_n > 0:
                 df = df.head(top_n)
             
             labels = df[label_col].astype(str).tolist()
             values = pd.to_numeric(df[value_col], errors='coerce').fillna(0).tolist()
-            logger.debug(f"Generated {len(labels)} labels and {len(values)} values")
+            logger.info(f"🚀Generated {len(labels)} labels and {len(values)} values")
             
             dataset_label = f"Top {len(values)} by Realized Value"
             if value_col != "realized_value":
@@ -109,7 +109,7 @@ class GraphService:
             }
             
         except Exception as e:
-            logger.error(f"Error generating graph from query results: {str(e)}")
+            logger.error(f"🚀Error generating graph from query results: {str(e)}")
             logger.error(traceback.format_exc())
             return {
                 "status": "error",
@@ -119,7 +119,7 @@ class GraphService:
             }
 
     def execute_sql_query(sql_query: str) -> dict:
-        logger.info(f"Executing SQL query: {sql_query[:100]}...")
+        logger.info(f"🚀Executing SQL query: {sql_query[:100]}...")
         try:
             with sql.connect(
                 server_hostname=DATABRICKS_SERVER_HOSTNAME,
@@ -127,7 +127,7 @@ class GraphService:
                 access_token=DATABRICKS_ACCESS_TOKEN
             ) as conn:
                 with conn.cursor() as cursor:
-                    logger.debug("Connected to Databricks, executing query")
+                    logger.info("🚀Connected to Databricks, executing query")
                     cursor.execute(sql_query)
                     columns = [desc[0] for desc in cursor.description]
                     data = []
@@ -140,7 +140,7 @@ class GraphService:
                                 row_dict[col] = row[idx]
                         data.append(row_dict)
                     
-                    logger.info(f"Query executed successfully. Returned {len(data)} rows")
+                    logger.info(f"🚀Query executed successfully. Returned {len(data)} rows")
                     return {
                         "status": "success",
                         "columns": columns,
@@ -149,7 +149,7 @@ class GraphService:
                         "row_count": len(data)
                     }
         except Exception as e:
-            logger.error(f"SQL query execution failed: {str(e)}")
+            logger.error(f"🚀 SQL query execution failed: {str(e)}")
             logger.error(traceback.format_exc())
             return {
                 "status": "error",
@@ -192,7 +192,7 @@ class GraphService:
     def generate_from_prompt(prompt: str) -> dict:
       logger.info("Starting graph generation from prompt")
       try:
-            logger.debug(f"Original prompt: {prompt[:200]}...")
+            logger.info(f"🚀Original prompt: {prompt[:200]}...")
             
             # First try to extract embedded data if present
             embedded_data_result = GraphService._try_extract_embedded_data(prompt)
@@ -213,7 +213,7 @@ class GraphService:
             )
             
             sql_query = sql_generator.invoke(enhanced_prompt)
-            logger.debug(f"Generated SQL: {sql_query}")
+            logger.info(f"🚀Generated SQL: {sql_query}")
             
             if not sql_query.lstrip().upper().startswith(("SELECT", "WITH")):
                   raise ValueError("Generated query is not valid SQL")
@@ -234,7 +234,7 @@ class GraphService:
             return GraphService.generate_from_query_results(query_results, prompt)
             
       except Exception as e:
-            logger.error(f"Critical error in generate_from_prompt: {str(e)}")
+            logger.error(f"🚀 Critical error in generate_from_prompt: {str(e)}")
             return {
                   "status": "error",
                   "message": f"Failed to generate graph: {str(e)}",

@@ -1,4 +1,3 @@
-#Sharing next file just keep it and do not analyze until i confirm I have shared all the files
 #/backedn/app/configagsqlquerygenerator.py
 
 from dotenv import load_dotenv

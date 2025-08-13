@@ -13,7 +13,7 @@ import {
   Tooltip,
 } from "chart.js";
 import PropTypes from "prop-types";
-import React, { Component, useCallback, useEffect, useRef, useState } from "react";
+import React, { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Bar, Line, Pie } from "react-chartjs-2";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -129,6 +129,136 @@ const ThemeToggle = ({ theme, toggleTheme }) => {
   );
 };
 
+const MemoizedChartComponent = memo(({ chartData }) => {
+  if (!chartData || !chartData.data) {
+    log.error("Invalid chart data format", chartData);
+    return (
+      <div className="error-message-bubble">
+        Invalid chart data format
+      </div>
+    );
+  }
+
+  try {
+    const Component = 
+      chartData.type === "bar" ? Bar :
+      chartData.type === "line" ? Line :
+      chartData.type === "pie" ? Pie :
+      null;
+
+    if (!Component) {
+      return <div className="error-message-bubble">Unsupported chart type: {chartData.type}</div>;
+    }
+
+    return (
+      <div className="chart-container" style={{ height: '400px', width: '150%' }}>
+        <Component data={chartData.data} options={chartData.options} />
+      </div>
+    );
+  } catch (error) {
+    log.error("Chart rendering error:", error);
+    return (
+      <div className="error-message-bubble">
+        Chart rendering failed: {error.message}
+      </div>
+    );
+  }
+});
+
+MemoizedChartComponent.propTypes = {
+  chartData: PropTypes.shape({
+    type: PropTypes.string,
+    data: PropTypes.object,
+    options: PropTypes.object,
+  }),
+};
+
+// Input component to isolate state changes
+const ChatInput = memo(({ prompt, setPrompt, handleSubmit, loading, uploadedFile, handleClearFile, handleFileClick, fileInputRef }) => (
+  <div className="input-area">
+    <form onSubmit={handleSubmit} className="input-form">
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={(e) => {
+          // This onChange is handled by the parent
+        }}
+        style={{ display: 'none' }}
+        accept=".txt,.csv,.json,.pdf,.doc,.docx"
+      />
+      
+      <div className="input-row">
+        <button
+          type="button"
+          className="attach-button"
+          onClick={handleFileClick}
+          title="Attach file"
+        >
+          <AttachmentIcon />
+        </button>
+        <textarea
+          className="input-textarea"
+          rows={3}
+          placeholder="Ask me anything..."
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          onKeyPress={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              handleSubmit(e);
+            }
+          }}
+          disabled={loading || (uploadedFile && uploadedFile.isLoading)}
+        ></textarea>
+        <button
+          type="submit"
+          className={`send-button ${
+            (prompt.trim() || (uploadedFile && uploadedFile.content && !uploadedFile.isLoading && !uploadedFile.error)) && !loading
+              ? "send-button-active"
+              : "send-button-disabled"
+          }`}
+          disabled={
+            (!prompt.trim() && (!uploadedFile || !uploadedFile.content || uploadedFile.isLoading || uploadedFile.error)) ||
+            loading
+          }
+        >
+          <SendIcon />
+        </button>
+      </div>
+      {uploadedFile && (
+        <div className="file-attachment-info">
+          {uploadedFile.isLoading ? (
+            <FileLoadingIndicator />
+          ) : (
+            <>
+              <span>{uploadedFile.name}</span>
+              <button
+                type="button"
+                className="clear-file-button"
+                onClick={handleClearFile}
+                title="Remove file"
+              >
+                <XCircleIcon />
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </form>
+  </div>
+));
+
+ChatInput.propTypes = {
+  prompt: PropTypes.string.isRequired,
+  setPrompt: PropTypes.func.isRequired,
+  handleSubmit: PropTypes.func.isRequired,
+  loading: PropTypes.bool.isRequired,
+  uploadedFile: PropTypes.object,
+  handleClearFile: PropTypes.func.isRequired,
+  handleFileClick: PropTypes.func.isRequired,
+  fileInputRef: PropTypes.object.isRequired,
+};
+
+
 const ChatWindow = () => {
   const [messages, setMessages] = useState([]);
   const [prompt, setPrompt] = useState("");
@@ -167,43 +297,6 @@ const ChatWindow = () => {
     setTheme(newTheme);
     document.documentElement.setAttribute('data-theme', newTheme);
     localStorage.setItem('theme', newTheme);
-  };
-
-  // Enhanced ChartComponent with validation
-  const ChartComponent = ({ chartData }) => {
-    if (!chartData || !chartData.data) {
-      log.error("Invalid chart data format", chartData);
-      return (
-        <div className="error-message-bubble">
-          Invalid chart data format
-        </div>
-      );
-    }
-
-    try {
-      return (
-        <>
-          {chartData.type === "bar" && <Bar data={chartData.data} options={chartData.options} />}
-          {chartData.type === "line" && <Line data={chartData.data} options={chartData.options} />}
-          {chartData.type === "pie" && <Pie data={chartData.data} options={chartData.options} />}
-        </>
-      );
-    } catch (error) {
-      log.error("Chart rendering error:", error);
-      return (
-        <div className="error-message-bubble">
-          Chart rendering failed: {error.message}
-        </div>
-      );
-    }
-  };
-
-  ChartComponent.propTypes = {
-    chartData: PropTypes.shape({
-      type: PropTypes.string,
-      data: PropTypes.object,
-      options: PropTypes.object,
-    }),
   };
 
   // Robust graph data validation
@@ -367,6 +460,19 @@ const ChatWindow = () => {
       );
     }
 
+    // Define color palettes for charts
+    const lightThemeColors = ['rgba(54, 162, 235, 0.7)', 'rgba(255, 99, 132, 0.7)', 'rgba(255, 206, 86, 0.7)', 'rgba(75, 192, 192, 0.7)', 'rgba(153, 102, 255, 0.7)'];
+    const darkThemeColors = ['rgba(129, 199, 132, 0.7)', 'rgba(255, 159, 64, 0.7)', 'rgba(255, 205, 86, 0.7)', 'rgba(54, 162, 235, 0.7)', 'rgba(153, 102, 255, 0.7)'];
+    const activeColors = theme === 'dark' ? darkThemeColors : lightThemeColors;
+
+    // Determine background color based on chart type
+    let backgroundColor;
+    if (graphData.type === 'pie') {
+      backgroundColor = activeColors.slice(0, graphData.values.length);
+    } else {
+      backgroundColor = activeColors[0];
+    }
+
     // Prepare chart data with theme-aware colors
     const chartData = {
       type: graphData.type || 'bar',
@@ -375,7 +481,7 @@ const ChatWindow = () => {
         datasets: [{
           label: graphData.dataset_label || 'Deals Data',
           data: graphData.values || [],
-          backgroundColor: theme === 'dark' ? 'rgba(129, 199, 132, 0.7)' : 'rgba(54, 162, 235, 0.7)',
+          backgroundColor: backgroundColor,
           borderColor: theme === 'dark' ? 'rgba(129, 199, 132, 1)' : 'rgba(54, 162, 235, 1)',
           borderWidth: 1
         }]
@@ -416,10 +522,13 @@ const ChatWindow = () => {
       }
     };
 
+    // Remove scales for pie charts
+    if (graphData.type === 'pie') {
+      delete chartData.options.scales;
+    }
+
     return (
-      <div className="chart-container" style={{ height: '400px', width: '100%' }}>
-        <ChartComponent chartData={chartData} />
-      </div>
+      <MemoizedChartComponent chartData={chartData} />
     );
   };
 
@@ -523,6 +632,7 @@ const ChatWindow = () => {
 
     try {
       const res = await axios.post("http://localhost:8000/ask", payload);
+      console.log("ask response", (res))
       log.info("Received API response:", {
         status: res.data.status,
         thread_id: res.data.thread_id,
@@ -831,74 +941,16 @@ const ChatWindow = () => {
           <div ref={chatEndRef} />
         </div>
 
-        <div className="input-area">
-          <form onSubmit={handleSubmit} className="input-form">
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileUpload}
-              style={{ display: 'none' }}
-              accept=".txt,.csv,.json,.pdf,.doc,.docx"
-            />
-            
-            <div className="input-row">
-              <button
-                type="button"
-                className="attach-button"
-                onClick={handleFileClick}
-                title="Attach file"
-              >
-                <AttachmentIcon />
-              </button>
-              <textarea
-                className="input-textarea"
-                rows={3}
-                placeholder="Ask me anything..."
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                onKeyPress={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    handleSubmit(e);
-                  }
-                }}
-                disabled={loading || (uploadedFile && uploadedFile.isLoading)}
-              ></textarea>
-              <button
-                type="submit"
-                className={`send-button ${
-                  (prompt.trim() || (uploadedFile && uploadedFile.content && !uploadedFile.isLoading && !uploadedFile.error)) && !loading
-                    ? "send-button-active"
-                    : "send-button-disabled"
-                }`}
-                disabled={
-                  (!prompt.trim() && (!uploadedFile || !uploadedFile.content || uploadedFile.isLoading || uploadedFile.error)) ||
-                  loading
-                }
-              >
-                <SendIcon />
-              </button>
-            </div>
-            {uploadedFile && (
-              <div className="file-attachment-info">
-                {uploadedFile.isLoading ? (
-                  <FileLoadingIndicator />
-                ) : (
-                  <>
-                    <span>{uploadedFile.name}</span>
-                    <button
-                      type="button"
-                      className="clear-file-button"
-                      onClick={handleClearFile}
-                      title="Remove file"
-                    >
-                      <XCircleIcon />
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-          </form>
-        </div>
+        <ChatInput
+          prompt={prompt}
+          setPrompt={setPrompt}
+          handleSubmit={handleSubmit}
+          loading={loading}
+          uploadedFile={uploadedFile}
+          handleClearFile={handleClearFile}
+          handleFileClick={handleFileClick}
+          fileInputRef={fileInputRef}
+        />
       </div>
     </div>
   );

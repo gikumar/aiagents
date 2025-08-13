@@ -12,7 +12,7 @@ from .utility.thread_cleanup_scheduler import start_thread_cleanup_scheduler
 
 # Set up logger
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.ERROR)
+logger.setLevel(logging.INFO)
 
 # Create console handler with higher level
 ch = logging.StreamHandler()
@@ -28,10 +28,10 @@ agent_factory = AgentFactory()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting application lifespan")
+    logger.info("🚀Starting application lifespan")
     start_thread_cleanup_scheduler()
     yield
-    logger.info("Application shutdown")
+    logger.info("🚀Application shutdown")
 
 app = FastAPI(lifespan=lifespan)
 
@@ -70,7 +70,7 @@ class AskResponse(BaseModel):
 
 @app.post("/ask", response_model=AskResponse)
 async def ask_agent(request: AskRequest):
-    logger.info("Received /ask request")
+    logger.info("🚀Received /ask request")
     try:
         if not request.prompt and not request.file_content:
             logger.warning("Empty request received")
@@ -98,7 +98,7 @@ async def ask_agent(request: AskRequest):
             chat_history=formatted_history
         )
         
-        logger.info("Request processed successfully")
+        logger.info("🚀Request processed successfully")
         return {
             "response": response.response,
             "thread_id": response.thread_id,
