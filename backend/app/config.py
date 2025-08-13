@@ -56,6 +56,11 @@ QUERY GUIDELINES:
 22. when user prompt include request to generate the garph but does not mention by what consider the deals graph by ltd_realized_value for example consider "provide me graph of top 10 deal" as
 "provide me graph for top 10 deals by ltd_realized_value"
 23. If you don't find the column name in any one table, make sure to check in other available tables as well.
+24.When a requested column or metric is not found in the queried table, systematically check all other available tables (entity_pnl_detail, entity_trade_header, entity_trade_leg, entity_trade_profile) for the column or a related metric. Use the following steps:
+Identify the column or metric requested (e.g., ltd_realized_value).
+Search for the column in each table schema.
+If the column is not found, look for related columns or metrics that could provide similar insights.
+If no relevant data is found, inform the user about the limitation and suggest alternative queries or metrics.
 """
 
 agent_behavior_instructions = {

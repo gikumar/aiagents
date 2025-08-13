@@ -69,7 +69,7 @@ class AgentFactory:
     RUN_CHECK_INTERVAL = 1  # Seconds between run status checks
     
     def __init__(self):
-        logger.info("Initializing AgentFactory")
+        logger.info("🚀Initializing AgentFactory")
         self.agent = None
         self.agent_client = AgentsClient(
             endpoint=PROJECT_ENDPOINT,
@@ -85,7 +85,7 @@ class AgentFactory:
         self.cleanup_interval = timedelta(minutes=10)
         self.thread_lock = threading.Lock()
         register_agent_instance("OrchestratorAgent", self)
-        logger.info("AgentFactory initialized successfully")
+        logger.info("🚀AgentFactory initialized successfully")
 
     def mark_run_active(self, thread_id: str):
         logger.info(f"🚀Marking run {thread_id} as active")
@@ -114,9 +114,9 @@ class AgentFactory:
                 del self.active_runs[tid]
 
     def get_or_create_agent(self) -> str:
-        logger.info("Getting or creating agent")
+        logger.info("🚀Getting or creating agent")
         if self.agent is not None:
-            logger.info("Using existing agent instance")
+            logger.info("🚀Using existing agent instance")
             return self.agent.id
 
         registered_tools = [
@@ -168,7 +168,7 @@ class AgentFactory:
                 "compressed_size": len(encoded)
             }
         except Exception as e:
-            logger.error(f"Compression failed: {str(e)}")
+            logger.error(f"🚀Compression failed: {str(e)}")
             raise ValueError("Failed to compress data") from e
 
     def _decompress_data(self, compressed_data: dict) -> Any:
@@ -181,7 +181,7 @@ class AgentFactory:
             decompressed = zlib.decompress(decoded)
             return json.loads(decompressed.decode('utf-8'))
         except Exception as e:
-            logger.error(f"Decompression failed: {str(e)}")
+            logger.error(f"🚀Decompression failed: {str(e)}")
             raise ValueError("Failed to decompress data") from e
 
     def _wait_for_run_completion(self, thread_id: str, run_id: str) -> bool:
@@ -194,7 +194,7 @@ class AgentFactory:
                     return True
                 time.sleep(self.RUN_CHECK_INTERVAL)
             except Exception as e:
-                logger.error(f"Error checking run status: {str(e)}")
+                logger.error(f"🚀Error checking run status: {str(e)}")
                 return False
         return False
 
@@ -210,7 +210,7 @@ class AgentFactory:
         logger.info(f"🚀Processing request with mode: {agent_mode}")
         try:
             if datetime.now() - self.last_cleanup > self.cleanup_interval:
-                logger.info("Running cleanup of stale runs")
+                logger.info("🚀Running cleanup of stale runs")
                 self.cleanup_stale_runs()
                 self.last_cleanup = datetime.now()
             
@@ -220,7 +220,7 @@ class AgentFactory:
             with self.thread_lock:
                 thread = self._get_thread_with_retry(thread_id, max_retries)
                 if isinstance(thread, AgentResponse):
-                    logger.info("Thread is busy with existing run")
+                    logger.info("🚀Thread is busy with existing run")
                     return thread
                 
                 behavior_instruction = agent_behavior_instructions.get(agent_mode, "")
@@ -234,7 +234,7 @@ class AgentFactory:
                 logger.info(f"🚀Using instructions:\n{full_instruction[:200]}...")
 
                 if not thread_id:
-                    logger.info("Sending initial instruction message")
+                    logger.info("🚀Sending initial instruction message")
                     self._send_message_with_retry(
                         thread.id,
                         "assistant",
@@ -244,10 +244,10 @@ class AgentFactory:
 
                 user_message_content = prompt
                 if file_content:
-                    logger.info("Appending file content to message")
+                    logger.info("🚀Appending file content to message")
                     user_message_content += f"\n\n[FILE_CONTENT_START]\n{file_content}\n[FILE_CONTENT_END]"
 
-                logger.info("Sending user message")
+                logger.info("🚀Sending user message")
                 self._send_message_with_retry(
                     thread.id,
                     "user",
@@ -256,13 +256,13 @@ class AgentFactory:
                 )
 
                 self.mark_run_active(thread.id)
-                logger.info("Creating and processing run")
+                logger.info("🚀Creating and processing run")
                 run = self.agent_client.runs.create_and_process(
                     thread_id=thread.id,
                     agent_id=agent_id
                 )
 
-                logger.info("Processing run results")
+                logger.info("🚀Processing run results")
                 return self._process_run_results(
                     run,
                     thread.id,
@@ -311,32 +311,32 @@ class AgentFactory:
                 logger.info(f"🚀Inspecting step: run_id={getattr(step, 'run_id', None)}, thread_id={getattr(step, 'thread_id', None)}, kind={getattr(step, 'kind', None)}")
 
                 if getattr(step, 'kind', '').lower() == "tool":
-                    logger.info("_get_tool_output: check step kind")
+                    logger.info("🚀_get_tool_output: check step kind")
                     attrs = getattr(step, 'attributes', {})
                     if isinstance(attrs, dict):
-                        logger.info("_get_tool_output: graph data is of dict type")
+                        logger.info("🚀_get_tool_output: graph data is of dict type")
                         func = attrs.get('function')
                         if func and func.get('name') == tool_name:
-                            logger.info("_get_tool_output: tool name matched for graph data")
+                            logger.info("🚀_get_tool_output: tool name matched for graph data")
                             output = func.get('output')
                             logger.info(f"🚀Found output in step.attributes.function: {output[:100] if isinstance(output, str) else output}")
                             return self._parse_output(output)
 
                 if hasattr(step, 'tool_call'):
-                    logger.info("_get_tool_output: checking graph data in step.tool_call")
+                    logger.info("🚀_get_tool_output: checking graph data in step.tool_call")
                     tc = step.tool_call
                     if getattr(tc, 'tool_name', None) == tool_name:
-                        logger.info("_get_tool_output: checking graph data in step.tool_call: tool name matched")
+                        logger.info("🚀_get_tool_output: checking graph data in step.tool_call: tool name matched")
                         output = getattr(tc, 'output', None)
                         logger.info(f"🚀Found output in step.tool_call: {output[:100] if isinstance(output, str) else output}")
                         return self._parse_output(output)
 
                 if hasattr(step, 'step_details') and hasattr(step.step_details, 'tool_calls'):
-                    logger.info("_get_tool_output: checking graph data in step.step_details.tool_calls")
+                    logger.info("🚀_get_tool_output: checking graph data in step.step_details.tool_calls")
                     for tool_call in step.step_details.tool_calls:
                         func = getattr(tool_call, 'function', None)
                         if func and func.get('name') == tool_name:
-                            logger.info("_get_tool_output: checking graph data in step.step_details.tool_calls: function name matched")
+                            logger.info("🚀_get_tool_output: checking graph data in step.step_details.tool_calls: function name matched")
                             output = func.get('output')
                             logger.info(f"🚀Found output in step.step_details.tool_calls: {output[:100] if isinstance(output, str) else output}")
                             return self._parse_output(output)
@@ -353,7 +353,7 @@ class AgentFactory:
         thread_id: str,
         max_retries: int
     ) -> AgentResponse:
-        logger.info("Processing run results")
+        logger.info("🚀Processing run results")
         prompt_tokens = run.usage.prompt_tokens or 0
         completion_tokens = run.usage.completion_tokens or 0
         logger.info(f"🚀Token usage - Input: {prompt_tokens}, Output: {completion_tokens}")
@@ -367,7 +367,7 @@ class AgentFactory:
                 if isinstance(graph_data, dict) and graph_data.get("compressed", False):
                     graph_data = self._decompress_data(graph_data)
                 
-                logger.info(f"Graph data size: {len(json.dumps(graph_data)) if graph_data else 0} bytes")
+                logger.info(f"🚀Graph data size: {len(json.dumps(graph_data)) if graph_data else 0} bytes")
                 return AgentResponse(
                     response="Here's the requested graph:",
                     thread_id=thread_id,
@@ -377,7 +377,7 @@ class AgentFactory:
                     response_type="graph"
                 )
             except Exception as e:
-                logger.error(f"Failed to process graph output: {str(e)}")
+                logger.error(f"🚀Failed to process graph output: {str(e)}")
                 return AgentResponse(
                     response="Error processing graph data",
                     thread_id=thread_id,
@@ -408,7 +408,7 @@ class AgentFactory:
                     break
                     
         if agent_response is None:
-            logger.info("No direct agent response found")
+            logger.info("🚀No direct agent response found")
             return AgentResponse(
                 response="Agent did not provide a direct response",
                 thread_id=thread_id,
@@ -420,7 +420,7 @@ class AgentFactory:
         if thread_id in self.active_runs:
             del self.active_runs[thread_id]
 
-        logger.info("Returning text response")
+        logger.info("🚀Returning text response")
         return AgentResponse(
             response=agent_response,
             thread_id=thread_id,
@@ -442,7 +442,7 @@ class AgentFactory:
                     ))
                     
                     if active_runs:
-                        logger.info(f"Active runs found: {[r.id for r in active_runs]}")
+                        logger.info(f"🚀Active runs found: {[r.id for r in active_runs]}")
                         
                         # Wait for existing runs to complete
                         for run in active_runs:
@@ -469,10 +469,10 @@ class AgentFactory:
                         
                     return self.agent_client.threads.get(thread_id)
                 elif self.current_thread:
-                    logger.info("Using current thread")
+                    logger.info("🚀Using current thread")
                     return self.current_thread
                 else:
-                    logger.info("Creating new thread")
+                    logger.info("🚀Creating new thread")
                     thread = self.agent_client.threads.create()
                     self.current_thread = thread
                     return thread
@@ -482,7 +482,7 @@ class AgentFactory:
                 time.sleep(1 * (attempt + 1))
 
     def _send_message_with_retry(self, thread_id: str, role: str, content: str, max_retries: int):
-        logger.info(f"Sending {role} message to thread {thread_id}")
+        logger.info(f"🚀Sending {role} message to thread {thread_id}")
         for attempt in range(max_retries):
             try:
                 self.agent_client.messages.create(
