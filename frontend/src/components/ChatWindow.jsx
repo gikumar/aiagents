@@ -108,6 +108,18 @@ const DarkThemeIcon = () => (
   </svg>
 );
 
+const CopyIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" className="icon-x-small" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M8 5H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-2m-4-4l-4 4m0-4h.01M16 12l-4-4m4 4h.01M12 10a2 2 0 012 2v4a2 2 0 01-2 2h-4a2 2 0 01-2-2v-4a2 2 0 012-2h4z" />
+  </svg>
+);
+
+const RetryIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" className="icon-x-small" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.999 8.999 0 0120.985 12a9 9 0 11-14.471-8.529M20 9v5h-.582m-15.356-2A8.999 8.999 0 013.015 12a9 9 0 1114.471 8.529" />
+  </svg>
+);
+
 const ThemeToggle = ({ theme, toggleTheme }) => {
   return (
     <div className="theme-toggle">
@@ -140,7 +152,7 @@ const MemoizedChartComponent = memo(({ chartData }) => {
   }
 
   try {
-    const Component = 
+    const Component =
       chartData.type === "bar" ? Bar :
       chartData.type === "line" ? Line :
       chartData.type === "pie" ? Pie :
@@ -151,7 +163,7 @@ const MemoizedChartComponent = memo(({ chartData }) => {
     }
 
     return (
-      <div className="chart-container" style={{ height: '400px', width: '150%' }}>
+      <div className="chart-container">
         <Component data={chartData.data} options={chartData.options} />
       </div>
     );
@@ -173,26 +185,25 @@ MemoizedChartComponent.propTypes = {
   }),
 };
 
-// Input component to isolate state changes
-const ChatInput = memo(({ prompt, setPrompt, handleSubmit, loading, uploadedFile, handleClearFile, handleFileClick, fileInputRef }) => (
+const ChatInput = memo(({ prompt, setPrompt, handleSubmit, loading, uploadedFile, handleClearFile, handleFileClick, fileInputRef, handleFileUpload }) => (
   <div className="input-area">
     <form onSubmit={handleSubmit} className="input-form">
       <input
         type="file"
         ref={fileInputRef}
-        onChange={(e) => {
-          // This onChange is handled by the parent
-        }}
+        onChange={handleFileUpload}
         style={{ display: 'none' }}
-        accept=".txt,.csv,.json,.pdf,.doc,.docx"
+        accept=".txt,.csv,.json"
+        aria-label="Attach a text, CSV, or JSON file"
       />
-      
+
       <div className="input-row">
         <button
           type="button"
           className="attach-button"
           onClick={handleFileClick}
           title="Attach file"
+          aria-label="Attach file"
         >
           <AttachmentIcon />
         </button>
@@ -202,15 +213,17 @@ const ChatInput = memo(({ prompt, setPrompt, handleSubmit, loading, uploadedFile
           placeholder="Ask me anything..."
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
-          onKeyPress={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault();
               handleSubmit(e);
             }
           }}
-          disabled={loading || (uploadedFile && uploadedFile.isLoading)}
+          aria-label="Message input"
         ></textarea>
         <button
           type="submit"
+          aria-label="Send message"
           className={`send-button ${
             (prompt.trim() || (uploadedFile && uploadedFile.content && !uploadedFile.isLoading && !uploadedFile.error)) && !loading
               ? "send-button-active"
@@ -220,6 +233,7 @@ const ChatInput = memo(({ prompt, setPrompt, handleSubmit, loading, uploadedFile
             (!prompt.trim() && (!uploadedFile || !uploadedFile.content || uploadedFile.isLoading || uploadedFile.error)) ||
             loading
           }
+          title="Send"
         >
           <SendIcon />
         </button>
@@ -236,6 +250,7 @@ const ChatInput = memo(({ prompt, setPrompt, handleSubmit, loading, uploadedFile
                 className="clear-file-button"
                 onClick={handleClearFile}
                 title="Remove file"
+                aria-label="Remove file"
               >
                 <XCircleIcon />
               </button>
@@ -256,8 +271,90 @@ ChatInput.propTypes = {
   handleClearFile: PropTypes.func.isRequired,
   handleFileClick: PropTypes.func.isRequired,
   fileInputRef: PropTypes.object.isRequired,
+  handleFileUpload: PropTypes.func.isRequired,
 };
 
+const ChatMessage = memo(({ message, messageLayout, onCopy, onRetry }) => {
+  const messageRef = useRef(null);
+
+  const handleCopyClick = useCallback(() => {
+    if (messageRef.current) {
+      onCopy(messageRef.current.innerText);
+    }
+  }, [onCopy]);
+
+  return (
+    <div
+      className={`chat-message-row ${
+        message.sender === "user" && messageLayout === "alternating"
+          ? "user-message-row"
+          : ""
+      }`}
+    >
+      <div
+        className={`message-content-wrapper ${
+          message.sender === "user" && messageLayout === "alternating"
+            ? "user-message-wrapper"
+            : ""
+        }`}
+      >
+        {message.sender === "user" ? <UserAvatar /> : <AgentAvatar />}
+        <div
+          className={`message-bubble ${message.sender}-message-bubble ${
+            message.isError ? "error-message-bubble" : ""
+          }`}
+        >
+          {message.sender === "agent" && (
+            <div className="message-actions">
+              <button className="copy-button" onClick={handleCopyClick} title="Copy response" aria-label="Copy response">
+                <CopyIcon />
+              </button>
+              {message.isError && (
+                <button
+                  className="retry-button"
+                  onClick={() => onRetry(message.index)}
+                  title="Retry"
+                  aria-label="Retry"
+                >
+                  <RetryIcon />
+                </button>
+              )}
+            </div>
+          )}
+          <div ref={messageRef}>
+            {message.type === "graph" ? (
+              <MemoizedChartComponent chartData={message.data} />
+            ) : (
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {typeof message.text === "string" ? message.text : JSON.stringify(message.text)}
+              </ReactMarkdown>
+            )}
+            {message.tokens && (
+              <div className="token-info-small">
+                <span>Tokens: {message.tokens.input} in / {message.tokens.output} out</span>
+              </div>
+            )}
+            {message.details && (
+              <div className="debug-details">
+                <details>
+                  <summary>Error Details</summary>
+                  <pre>{JSON.stringify(message.details, null, 2)}</pre>
+                </details>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+ChatMessage.propTypes = {
+  message: PropTypes.object.isRequired,
+  messageLayout: PropTypes.string.isRequired,
+  onCopy: PropTypes.func.isRequired,
+  onRetry: PropTypes.func.isRequired,
+};
 
 const ChatWindow = () => {
   const [messages, setMessages] = useState([]);
@@ -272,15 +369,17 @@ const ChatWindow = () => {
   const [isSidebarHidden, setIsSidebarHidden] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(350);
   const [theme, setTheme] = useState('light');
+  const [showScrollButton, setShowScrollButton] = useState(false);
 
   const chatEndRef = useRef(null);
+  const chatMessagesRef = useRef(null);
   const sidebarRef = useRef(null);
   const appContainerRef = useRef(null);
   const [isResizing, setIsResizing] = useState(false);
   const startX = useRef(0);
   const startWidth = useRef(0);
   const fileInputRef = useRef(null);
-  
+
   // Initialize theme from localStorage or system preference
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme');
@@ -299,13 +398,29 @@ const ChatWindow = () => {
     localStorage.setItem('theme', newTheme);
   };
 
+  const handleCopy = useCallback(async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      log.info("Text copied to clipboard successfully!");
+    } catch (err) {
+      log.error("Failed to copy text:", err);
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      log.warn("Text copied using fallback method");
+    }
+  }, []);
+
   // Robust graph data validation
   const validateGraphData = (data) => {
     if (!data) {
       log.debug("Graph data is null/undefined");
       return false;
     }
-    
+
     const requiredFields = ['type', 'labels', 'values'];
     for (const field of requiredFields) {
       if (!(field in data)) {
@@ -340,13 +455,13 @@ const ChatWindow = () => {
   // Enhanced graph data extraction with multiple fallbacks
   const extractGraphData = (response) => {
     log.debug("Attempting to extract graph data from response");
-    
+
     // Case 1: Response is already a graph data object
     if (response && typeof response === 'object' && response.graph_data) {
       log.debug("Found graph_data in response object");
       return response.graph_data;
     }
-    
+
     // Case 2: Response is a string that might contain JSON
     if (typeof response === 'string') {
       try {
@@ -369,11 +484,11 @@ const ChatWindow = () => {
         try {
           const jsonStart = response.indexOf('{');
           const jsonEnd = response.lastIndexOf('}') + 1;
-          
+
           if (jsonStart >= 0 && jsonEnd > jsonStart) {
             const jsonStr = response.substring(jsonStart, jsonEnd);
             log.debug("Extracted potential JSON:", jsonStr.slice(0, 100) + (jsonStr.length > 100 ? "..." : ""));
-            
+
             const parsedData = JSON.parse(jsonStr);
             if (parsedData.graph_data) {
               log.debug("Found graph_data in embedded JSON");
@@ -411,132 +526,41 @@ const ChatWindow = () => {
     return null;
   };
 
-  // Enhanced graph rendering with fallbacks
-  const renderGraph = (graphData) => {
-    log.debug("Rendering graph with data:", graphData);
-    
-    if (!validateGraphData(graphData)) {
-      log.error("Invalid graph data structure:", graphData);
-      return (
-        <div className="error-message-bubble">
-          Invalid graph data structure. Expected format: {"{"}
-          type: 'bar'|'line'|'pie', labels: [], values: []
-          {"}"}
-          <div className="debug-info">
-            <pre>{JSON.stringify(graphData, null, 2)}</pre>
-          </div>
-        </div>
-      );
-    }
-
-    // Check if values are empty or invalid
-    if (!graphData.values || graphData.values.length === 0 || 
-        graphData.values.some(v => v === null || v === undefined || isNaN(v))) {
-      log.warn("Graph data has invalid values - falling back to table view");
-      return (
-        <div className="data-fallback">
-          <h4>{graphData.title || 'Data Table'}</h4>
-          <table>
-            <thead>
-              <tr>
-                <th>Label</th>
-                <th>Value</th>
-              </tr>
-            </thead>
-            <tbody>
-              {graphData.labels.map((label, index) => (
-                <tr key={index}>
-                  <td>{label}</td>
-                  <td>
-                    {graphData.values[index] !== undefined && graphData.values[index] !== null && !isNaN(graphData.values[index]) 
-                      ? graphData.values[index] 
-                      : 'N/A'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      );
-    }
-
-    // Define color palettes for charts
-    const lightThemeColors = ['rgba(54, 162, 235, 0.7)', 'rgba(255, 99, 132, 0.7)', 'rgba(255, 206, 86, 0.7)', 'rgba(75, 192, 192, 0.7)', 'rgba(153, 102, 255, 0.7)'];
-    const darkThemeColors = ['rgba(129, 199, 132, 0.7)', 'rgba(255, 159, 64, 0.7)', 'rgba(255, 205, 86, 0.7)', 'rgba(54, 162, 235, 0.7)', 'rgba(153, 102, 255, 0.7)'];
-    const activeColors = theme === 'dark' ? darkThemeColors : lightThemeColors;
-
-    // Determine background color based on chart type
-    let backgroundColor;
-    if (graphData.type === 'pie') {
-      backgroundColor = activeColors.slice(0, graphData.values.length);
-    } else {
-      backgroundColor = activeColors[0];
-    }
-
-    // Prepare chart data with theme-aware colors
-    const chartData = {
-      type: graphData.type || 'bar',
-      data: {
-        labels: graphData.labels || [],
-        datasets: [{
-          label: graphData.dataset_label || 'Deals Data',
-          data: graphData.values || [],
-          backgroundColor: backgroundColor,
-          borderColor: theme === 'dark' ? 'rgba(129, 199, 132, 1)' : 'rgba(54, 162, 235, 1)',
-          borderWidth: 1
-        }]
-      },
-      options: {
-        responsive: true,
-        plugins: {
-          title: {
-            display: true,
-            text: graphData.title || 'Deals Analysis',
-            color: theme === 'dark' ? '#E0E0E0' : '#212529'
-          },
-          legend: {
-            labels: {
-              color: theme === 'dark' ? '#E0E0E0' : '#212529'
-            }
-          }
-        },
-        scales: {
-          y: {
-            beginAtZero: false,
-            ticks: {
-              color: theme === 'dark' ? '#E0E0E0' : '#212529'
-            },
-            grid: {
-              color: theme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)'
-            }
-          },
-          x: {
-            ticks: {
-              color: theme === 'dark' ? '#E0E0E0' : '#212529'
-            },
-            grid: {
-              color: theme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)'
-            }
-          }
-        }
-      }
-    };
-
-    // Remove scales for pie charts
-    if (graphData.type === 'pie') {
-      delete chartData.options.scales;
-    }
-
-    return (
-      <MemoizedChartComponent chartData={chartData} />
-    );
-  };
-
   // Auto-scroll to bottom when messages change
   useEffect(() => {
     log.debug("Messages updated, scrolling to bottom");
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Handle scroll event for the "Scroll to Top" button
+  useEffect(() => {
+    const handleScroll = () => {
+      if (chatMessagesRef.current) {
+        const isScrolled = chatMessagesRef.current.scrollTop > 100;
+        setShowScrollButton(isScrolled);
+      }
+    };
+
+    const messagesContainer = chatMessagesRef.current;
+    if (messagesContainer) {
+      messagesContainer.addEventListener('scroll', handleScroll);
+    }
+
+    return () => {
+      if (messagesContainer) {
+        messagesContainer.removeEventListener('scroll', handleScroll);
+      }
+    };
+  }, []);
+
+  const scrollToTop = () => {
+    if (chatMessagesRef.current) {
+      chatMessagesRef.current.scrollTo({
+        top: 0,
+        behavior: 'smooth'
+      });
+    }
+  };
 
   // Update sidebar width CSS variable
   useEffect(() => {
@@ -573,15 +597,8 @@ const ChatWindow = () => {
 
   // Add/remove resize event listeners
   useEffect(() => {
-    if (isResizing) {
-      log.debug("Adding resize event listeners");
-      window.addEventListener("mousemove", onMouseMove);
-      window.addEventListener("mouseup", onMouseUp);
-    } else {
-      log.debug("Removing resize event listeners");
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
-    }
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
     return () => {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
@@ -593,35 +610,14 @@ const ChatWindow = () => {
     setIsSidebarHidden((prev) => !prev);
   };
 
-  const handleSubmit = useCallback(async (e) => {
-    e.preventDefault();
-    if (!prompt.trim() && (!uploadedFile || !uploadedFile.content)) {
-      log.warn("Submit attempted with empty prompt and no file");
-      return;
-    }
-
-    log.info("Submitting new message to agent");
-    const userMessage = {
-      sender: "user",
-      text: prompt.trim(),
-      ...(uploadedFile && {
-        file_name: uploadedFile.fileName,
-        file_content: uploadedFile.content,
-      }),
-    };
-    
-    setMessages((prevMessages) => [...prevMessages, userMessage]);
-    setPrompt("");
+  const handleSend = useCallback(async (text, file, history) => {
     setLoading(true);
 
     const payload = {
       agentMode: agentBehavior,
-      prompt: prompt.trim(),
-      file_content: uploadedFile ? uploadedFile.content : undefined,
-      chat_history: messages.map((msg) => ({
-        role: msg.sender === "user" ? "user" : "agent",
-        content: msg.text,
-      })),
+      prompt: text.trim(),
+      file_content: file ? file.content : undefined,
+      chat_history: history,
       thread_id: currentThreadId || undefined
     };
 
@@ -630,9 +626,86 @@ const ChatWindow = () => {
       file_content: payload.file_content ? `[${payload.file_content.length} chars]` : undefined
     });
 
+    // theme-aware palettes for charts
+    const lightThemePalette = [
+      'rgba(54, 162, 235, 0.7)', 'rgba(255, 99, 132, 0.7)', 'rgba(255, 206, 86, 0.7)',
+      'rgba(75, 192, 192, 0.7)', 'rgba(153, 102, 255, 0.7)', 'rgba(255, 159, 64, 0.7)',
+      'rgba(192, 192, 192, 0.7)'
+    ];
+    const darkThemePalette = [
+      'rgba(129, 199, 132, 0.7)', 'rgba(255, 159, 64, 0.7)', 'rgba(255, 205, 86, 0.7)',
+      'rgba(54, 162, 235, 0.7)', 'rgba(153, 102, 255, 0.7)', 'rgba(255, 99, 132, 0.7)',
+      'rgba(192, 192, 192, 0.7)'
+    ];
+
+    const toChartJSConfig = (g) => {
+      if (!g) return null;
+
+      // already a full chart config?
+      if (g.data && g.options) return g;
+
+      // expected "simple" shape: { type, labels, values, title?, dataset_label? }
+      const type = ['bar', 'line', 'pie'].includes(g.type) ? g.type : 'bar';
+      const labels = Array.isArray(g.labels) ? g.labels : [];
+      const values = Array.isArray(g.values) ? g.values : [];
+      const datasetLabel = g.dataset_label || g.title || 'Data';
+
+      const palette = (theme === 'dark' ? darkThemePalette : lightThemePalette);
+      const bg =
+        (type === 'pie' || type === 'bar')
+          ? labels.map((_, i) => palette[i % palette.length])
+          : palette[0];
+      const border =
+        Array.isArray(bg) ? bg.map(c => c.replace('0.7', '1')) : bg.replace('0.7', '1');
+
+      const options = {
+        responsive: true,
+        plugins: {
+          title: {
+            display: !!g.title,
+            text: g.title || datasetLabel,
+            color: theme === 'dark' ? '#E0E0E0' : '#212529'
+          },
+          legend: {
+            labels: { color: theme === 'dark' ? '#E0E0E0' : '#212529' }
+          }
+        },
+        scales: (type === 'pie') ? undefined : {
+          y: {
+            beginAtZero: false,
+            ticks: { color: theme === 'dark' ? '#E0E0E0' : '#212529' },
+            grid: { color: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }
+          },
+          x: {
+            ticks: { color: theme === 'dark' ? '#E0E0E0' : '#212529' },
+            grid: { color: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }
+          }
+        }
+      };
+
+      const dataset = {
+        label: datasetLabel,
+        data: values,
+        borderWidth: 1
+      };
+
+      if (type === 'line') {
+        dataset.backgroundColor = bg;
+        dataset.borderColor = border;
+        dataset.fill = false;
+      } else {
+        dataset.backgroundColor = Array.isArray(bg) ? bg : [bg];
+        dataset.borderColor = Array.isArray(border) ? border : [border];
+      }
+
+      const data = { labels, datasets: [dataset] };
+      const chart = { type, data, options };
+      if (type === 'pie') delete chart.options.scales;
+      return chart;
+    };
+
     try {
       const res = await axios.post("http://localhost:8000/ask", payload);
-      console.log("ask response", (res))
       log.info("Received API response:", {
         status: res.data.status,
         thread_id: res.data.thread_id,
@@ -657,23 +730,17 @@ const ChatWindow = () => {
         }
         agentResponse.isError = true;
       }
-      
-      // Extract graph data from multiple possible locations
-      let graphData = null;
-      if (res.data.graph_data) {
-        log.debug("Found graph_data in top-level response");
-        graphData = res.data.graph_data;
-      } else {
-        graphData = extractGraphData(res.data.response);
-        if (graphData) {
-          log.debug("Extracted graph_data from response text");
-        }
-      }
 
+      // normalize any graph payload to Chart.js config
+      let graphData = res.data.graph_data || extractGraphData(res.data.response);
       if (graphData) {
-        log.debug("Adding graph data to response");
-        agentResponse.type = "graph";
-        agentResponse.data = graphData;
+        const normalized = toChartJSConfig(graphData);
+        if (normalized) {
+          agentResponse.type = "graph";
+          agentResponse.data = normalized;
+        } else {
+          log.warn("Graph data found but could not be normalized", graphData);
+        }
       }
 
       setMessages((prev) => [...prev, agentResponse]);
@@ -697,7 +764,52 @@ const ChatWindow = () => {
       setUploadedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
-  }, [prompt, messages, uploadedFile, currentThreadId, agentBehavior]);
+  }, [messages, uploadedFile, currentThreadId, agentBehavior, theme]);
+
+  const handleSubmit = useCallback(async (e) => {
+    e.preventDefault();
+    if (!prompt.trim() && (!uploadedFile || !uploadedFile.content)) {
+      log.warn("Submit attempted with empty prompt and no file");
+      return;
+    }
+
+    log.info("Submitting new message to agent");
+    const userMessage = {
+      sender: "user",
+      text: prompt.trim(),
+      ...(uploadedFile && {
+        file_name: uploadedFile.name,           // fixed: was fileName
+        file_content: uploadedFile.content,
+      }),
+    };
+
+    const newMessages = [...messages, userMessage];
+    setMessages(newMessages);
+    setPrompt("");
+
+    const chatHistory = newMessages.map((msg) => ({
+      role: msg.sender === "user" ? "user" : "agent",
+      content: msg.text,
+    }));
+
+    handleSend(userMessage.text, uploadedFile, chatHistory);
+
+  }, [prompt, messages, uploadedFile, handleSend]);
+
+  const handleRetry = useCallback((errorMsgIndex) => {
+    log.info(`Retrying message at index: ${errorMsgIndex}`);
+    if (errorMsgIndex > 0) {
+      const lastUserMessage = messages[errorMsgIndex - 1];
+      if (lastUserMessage && lastUserMessage.sender === 'user') {
+        // Remove the error message from the chat history for a clean retry
+        setMessages(prevMessages => prevMessages.slice(0, errorMsgIndex));
+        handleSend(lastUserMessage.text, null, messages.slice(0, errorMsgIndex).map((msg) => ({
+          role: msg.sender === "user" ? "user" : "agent",
+          content: msg.text,
+        })));
+      }
+    }
+  }, [messages, handleSend]);
 
   const handleFileUpload = (event) => {
     const file = event.target.files[0];
@@ -774,7 +886,6 @@ const ChatWindow = () => {
         <div className="agent-settings-header">
           <SettingsIcon />
           <h2>Agent Settings</h2>
-          <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
         </div>
 
         <div className="settings-section">
@@ -864,6 +975,8 @@ const ChatWindow = () => {
         className={`sidebar-toggle-button ${isSidebarHidden ? "rotated" : ""}`}
         onClick={toggleSidebar}
         title={isSidebarHidden ? "Show Sidebar" : "Hide Sidebar"}
+        aria-label={isSidebarHidden ? "Show sidebar" : "Hide sidebar"}
+        aria-expanded={!isSidebarHidden}
         style={{ left: isSidebarHidden ? "0px" : `${sidebarWidth}px` }}
       >
         <ChevronLeftIcon />
@@ -872,56 +985,26 @@ const ChatWindow = () => {
       {/* Main Chat Area */}
       <div className="main-chat-area">
         <div className="main-chat-header">
-          <h3 className="welcome-title">E&C - Interactive Agent</h3>
+          <h3 className="welcome-title">E&amp;C - Interactive Agent</h3>
           <p className="welcome-subtitle">AI-powered agent for front, middle and back offices</p>
+          <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
         </div>
 
-        <div className="chat-messages">
+        <div
+          className="chat-messages"
+          ref={chatMessagesRef}
+          role="log"
+          aria-live="polite"
+          aria-relevant="additions"
+        >
           {messages.map((msg, index) => (
-            <div
+            <ChatMessage
               key={index}
-              className={`chat-message-row ${
-                msg.sender === "user" && messageLayout === "alternating"
-                  ? "user-message-row"
-                  : ""
-              }`}
-            >
-              <div
-                className={`message-content-wrapper ${
-                  msg.sender === "user" && messageLayout === "alternating"
-                    ? "user-message-wrapper"
-                    : ""
-                }`}
-              >
-                {msg.sender === "user" ? <UserAvatar /> : <AgentAvatar />}
-                <div
-                  className={`message-bubble ${msg.sender}-message-bubble ${
-                    msg.isError ? "error-message-bubble" : ""
-                  }`}
-                >
-                  {msg.type === "graph" ? (
-                    renderGraph(msg.data)
-                  ) : (
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {typeof msg.text === "string" ? msg.text : JSON.stringify(msg.text)}
-                    </ReactMarkdown>
-                  )}
-                  {msg.tokens && (
-                    <div className="token-info-small">
-                      <span>Tokens: {msg.tokens.input} in / {msg.tokens.output} out</span>
-                    </div>
-                  )}
-                  {msg.details && (
-                    <div className="debug-details">
-                      <details>
-                        <summary>Error Details</summary>
-                        <pre>{JSON.stringify(msg.details, null, 2)}</pre>
-                      </details>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+              message={{ ...msg, index }}
+              messageLayout={messageLayout}
+              onCopy={handleCopy}
+              onRetry={handleRetry}
+            />
           ))}
 
           {loading && (
@@ -941,6 +1024,17 @@ const ChatWindow = () => {
           <div ref={chatEndRef} />
         </div>
 
+        <button
+          className={`scroll-to-top-button ${showScrollButton ? "show" : ""}`}
+          onClick={scrollToTop}
+          title="Scroll to top"
+          aria-label="Scroll to top"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="icon-small" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+          </svg>
+        </button>
+
         <ChatInput
           prompt={prompt}
           setPrompt={setPrompt}
@@ -950,6 +1044,7 @@ const ChatWindow = () => {
           handleClearFile={handleClearFile}
           handleFileClick={handleFileClick}
           fileInputRef={fileInputRef}
+          handleFileUpload={handleFileUpload}
         />
       </div>
     </div>

@@ -15,6 +15,7 @@
   --error-bg: #f8d7da;
   --error-border: #f5c6cb;
   --error-text: #721c24;
+  --code-bg: #f2f2f2;
 }
 
 [data-theme="dark"] {
@@ -31,6 +32,7 @@
   --error-bg: #3a1a1d;
   --error-border: #5c2c30;
   --error-text: #ffb3b8;
+  --code-bg: #2d2d2d;
 }
 
 /* ===== BASE STYLES ===== */
@@ -304,7 +306,7 @@ body {
 
 .sidebar-toggle-button:hover {
   background-color: var(--color-primary-dark);
-  transform: translateX(-50%) scale(1.05);
+  transform: translateY(-1px) scale(1.05);
 }
 
 .sidebar-toggle-button:hover,
@@ -336,6 +338,11 @@ body {
   background-color: var(--color-bg);
   border-bottom: 2px solid var(--color-border);
   transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  position: relative;
 }
 
 .welcome-title {
@@ -465,11 +472,57 @@ body {
   color: white;
 }
 
+.agent-message-bubble:hover .message-actions {
+  opacity: 1;
+  visibility: visible;
+  transform: scale(1) translateY(-50%);
+}
+
+.message-actions {
+  position: absolute;
+  top: 50%;
+  right: -24px;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s ease-in-out;
+}
+
+.copy-button, .retry-button {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+}
+
+.copy-button:hover, .retry-button:hover {
+  background: var(--color-primary);
+  border-color: var(--color-primary-dark);
+  color: white;
+}
+
+.copy-button svg, .retry-button svg {
+  color: var(--color-text-secondary);
+}
+
+.copy-button:hover svg, .retry-button:hover svg {
+  color: white;
+}
+
 /* ===== GRAPH CONTAINERS ===== */
-.graph-container {
+.chart-container {
   width: 100%;
+  height: 300px; /* Reduced height for better fit */
   min-height: 200px;
-  max-height: 200px;
   background: var(--agent-bubble-bg);
   border-radius: 12px;
   padding: 10px;
@@ -477,21 +530,20 @@ body {
   box-shadow: 0 2px 8px var(--color-shadow);
   position: relative;
   border: 1px solid var(--color-border);
+  box-sizing: border-box;
 }
 
 .chartjs-render-monitor {
-  width: 200% !important;
+  width: 100% !important;
   height: 100% !important;
-  min-height: 200px;
-  max-height: 300px;
 }
 
-.agent-message-bubble .graph-container {
+.agent-message-bubble .chart-container {
   background: var(--color-bg-secondary);
   border: 1px solid var(--color-border);
 }
 
-.user-message-bubble .graph-container {
+.user-message-bubble .chart-container {
   background: rgba(255,255,255,0.1);
   border: 1px solid rgba(255,255,255,0.2);
 }
@@ -564,20 +616,23 @@ body {
   align-items: flex-end;
   gap: 10px;
   width: 100%;
+  background: var(--color-bg-secondary);
+  border-radius: 16px;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  box-shadow: inset 0 2px 4px var(--color-shadow);
 }
 
 .input-textarea {
   flex-grow: 1;
-  padding: 16px 20px;
-  border: 1px solid var(--color-border);
-  border-radius: 16px;
+  padding: 10px 0;
+  border: none;
   font-size: 1.05em;
   resize: none;
-  min-height: 60px;
+  min-height: 40px;
   max-height: 200px;
   overflow-y: auto;
-  background-color: var(--color-bg-secondary);
-  box-shadow: inset 0 2px 4px var(--color-shadow);
+  background-color: transparent;
   transition: all 0.2s ease;
   color: var(--color-text);
   line-height: 1.5;
@@ -585,18 +640,17 @@ body {
 
 .input-textarea:focus {
   outline: none;
-  border-color: var(--color-primary);
-  background-color: var(--color-bg);
-  box-shadow: inset 0 2px 4px var(--color-shadow), 0 0 0 3px rgba(102, 187, 106, 0.1);
+  background-color: transparent;
+  box-shadow: none;
 }
 
 .send-button {
   background: var(--user-bubble-bg);
   color: white;
   border: none;
-  border-radius: 16px;
-  width: 52px;
-  height: 52px;
+  border-radius: 12px;
+  width: 48px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -644,12 +698,12 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 52px;
-  width: 52px;
+  height: 48px;
+  width: 48px;
 }
 
 .attach-button:hover {
-  background-color: var(--color-bg-secondary);
+  background-color: var(--color-bg);
   color: var(--color-primary);
 }
 
@@ -737,9 +791,12 @@ body {
 
 /* ===== THEME TOGGLE ===== */
 .theme-toggle {
+  position: absolute;
+  top: 50%;
+  right: 20px;
+  transform: translateY(-50%);
   display: flex;
   gap: 8px;
-  margin-left: auto;
   align-items: center;
 }
 
@@ -756,17 +813,85 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  color: var(--color-text-secondary);
 }
 
 .theme-toggle button.active {
   background: var(--color-primary);
   color: white;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
 }
 
 .theme-toggle button:hover {
   transform: scale(1.1);
   background: var(--color-bg-secondary);
 }
+
+/* ===== SCROLL TO TOP BUTTON ===== */
+.scroll-to-top-button {
+  position: absolute;
+  bottom: 90px;
+  right: 25px;
+  background-color: var(--color-primary);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 45px;
+  height: 45px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s ease-in-out;
+  transform: translateY(10px);
+  z-index: 10;
+}
+
+.scroll-to-top-button.show {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.scroll-to-top-button:hover {
+  background-color: var(--color-primary-dark);
+  transform: translateY(-2px) scale(1.05);
+}
+
+.scroll-to-top-button svg {
+  color: white;
+}
+
+
+/* ===== CODE BLOCKS ===== */
+.message-bubble pre {
+  background-color: var(--code-bg);
+  padding: 15px;
+  border-radius: 8px;
+  font-family: 'Fira Code', 'Roboto Mono', monospace;
+  font-size: 0.9em;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow: auto;
+  max-height: 400px;
+  border: 1px solid var(--color-border);
+  box-shadow: inset 0 1px 3px var(--color-shadow);
+}
+
+/* For inline code */
+.message-bubble code {
+  font-family: 'Fira Code', 'Roboto Mono', monospace;
+  background-color: var(--code-bg);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  border: 1px solid var(--color-border);
+}
+
 
 /* ===== MOBILE RESPONSIVENESS ===== */
 @media (max-width: 768px) {
@@ -794,7 +919,8 @@ body {
   }
 
   .theme-toggle {
-    margin-left: 0;
+    position: static;
+    transform: none;
     margin-top: 10px;
     justify-content: center;
     width: 100%;
