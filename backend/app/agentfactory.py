@@ -89,7 +89,7 @@ class AgentFactory:
         logger.info("🚀AgentFactory initialized successfully")
 
     def mark_run_active(self, thread_id: str):
-        logger.info(f"🚀Marking run {thread_id} as active")
+        logger.info(f"🚀Marking thread {thread_id} as active")
         self.active_runs[thread_id] = datetime.now()
 
     def remove_run(self, thread_id: str):
@@ -98,6 +98,7 @@ class AgentFactory:
             del self.active_runs[thread_id]
 
     def get_active_thread_ids(self):
+        logger.info(f"🚀Inside get_active_thread_ids")
         now = datetime.now()
         active_ids = [
             tid for tid, start_time in self.active_runs.items()
@@ -107,6 +108,7 @@ class AgentFactory:
         return active_ids
 
     def cleanup_stale_runs(self):
+        logger.info(f"🚀Inside cleanup_stale_runs")
         now = datetime.now()
         stale = [tid for tid, t in self.active_runs.items() if now - t > self.STALE_RUN_THRESHOLD]
         if stale:
@@ -115,7 +117,7 @@ class AgentFactory:
                 del self.active_runs[tid]
 
     def get_or_create_agent(self) -> str:
-        logger.info("🚀Getting or creating agent")
+        logger.info("🚀Inside get_or_create_agent Getting or creating agent")
         if self.agent is not None:
             logger.info("🚀Using existing agent instance")
             return self.agent.id
@@ -155,6 +157,7 @@ class AgentFactory:
 
     def _compress_data(self, data: Any) -> dict:
         """Compress data that exceeds size limits"""
+        logger.info("🚀Inside _compress_data")
         try:
             json_str = json.dumps(data)
             if len(json_str) <= self.MAX_OUTPUT_SIZE:
@@ -174,6 +177,7 @@ class AgentFactory:
 
     def _decompress_data(self, compressed_data: dict) -> Any:
         """Decompress data that was previously compressed"""
+        logger.info("🚀Inside _decompress_data")
         try:
             if not compressed_data.get("compressed", False):
                 return compressed_data.get("data")
@@ -187,12 +191,14 @@ class AgentFactory:
 
     def _wait_for_run_completion(self, thread_id: str, run_id: str) -> bool:
         """Wait for a run to complete or timeout"""
+        logger.info("🚀Inside _wait_for_run_completion")
         start_time = time.time()
         while time.time() - start_time < self.MAX_RUN_WAIT_TIME:
             try:
                 run = self.agent_client.runs.get(thread_id=thread_id, run_id=run_id)
                 if run.status in ["completed", "failed", "cancelled", "expired"]:
                     return True
+                logger.info("🚀Waiting for run to complete for RUN_CHECK_INTERVAL")
                 time.sleep(self.RUN_CHECK_INTERVAL)
             except Exception as e:
                 logger.error(f"🚀Error checking run status: {str(e)}")
@@ -208,15 +214,17 @@ class AgentFactory:
         thread_id: Optional[str] = None,
         max_retries: int = 3
     ) -> AgentResponse:
+        logger.info(f"🚀Inside process_request2")
         logger.info(f"🚀Processing request with mode: {agent_mode}")
         try:
             if datetime.now() - self.last_cleanup > self.cleanup_interval:
-                logger.info("🚀Running cleanup of stale runs")
+                logger.info("🚀Kicking off cleanup of stale runs")
                 self.cleanup_stale_runs()
                 self.last_cleanup = datetime.now()
             
             agent_id = self.get_or_create_agent()
-            
+            logger.info(f"🚀Agent created or retrieved with agent_id : {agent_id}")
+
             # Use thread lock to prevent concurrent modifications
             with self.thread_lock:
                 thread = self._get_thread_with_retry(thread_id, max_retries)
@@ -354,6 +362,7 @@ class AgentFactory:
         thread_id: str,
         max_retries: int
     ) -> AgentResponse:
+        logger.info("🚀Inside _process_run_results")
         logger.info("🚀Processing run results")
         prompt_tokens = run.usage.prompt_tokens or 0
         completion_tokens = run.usage.completion_tokens or 0
@@ -386,15 +395,18 @@ class AgentFactory:
                 )
 
         # Get final agent message
+        logger.info(f"🚀will extract agent final message")
         messages = None
         for attempt in range(max_retries):
             try:
+                logger.info(f"🚀attempt {attempt} to extract agent final message")
                 messages = list(self.agent_client.messages.list(
                     thread_id=thread_id,
                     order=ListSortOrder.ASCENDING
                 ))
                 break
             except Exception:
+                logger.info(f"🚀encountered exception in attempt {attempt} to extract agent final message. Will retry in next attmpt")
                 if attempt == max_retries - 1:
                     raise
                 time.sleep(1 * (attempt + 1))
@@ -432,11 +444,14 @@ class AgentFactory:
         )
 
     def _get_thread_with_retry(self, thread_id: Optional[str], max_retries: int):
+        logger.info(f"🚀inside _get_thread_with_retry")
         logger.info(f"🚀Getting thread with ID: {thread_id}")
         for attempt in range(max_retries):
+            logger.info(f"🚀attempt {attempt} to get thread.")
             try:
                 if thread_id:
                     # Check for any active runs
+                    logger.info(f"🚀thread_id : {thread_id} available, will check for active runs of this thread.")
                     active_runs = list(self.agent_client.runs.list(
                         thread_id=thread_id,
                         status=["in_progress", "queued", "requires_action"]
@@ -448,7 +463,9 @@ class AgentFactory:
                         # Wait for existing runs to complete
                         for run in active_runs:
                             if not self._wait_for_run_completion(thread_id, run.id):
+                                logger.info(f"🚀 Waiting for existing runs to complete for thread {thread_id} and run_id {run.id}")
                                 if attempt == max_retries - 1:
+                                    logger.info(f"🚀 Waited for {max_retries} times for runs to complete but still not completed for thread {thread_id} and run_id {run.id}")
                                     return AgentResponse(
                                         response="Please wait while I finish processing your previous request.",
                                         thread_id=thread_id,
@@ -469,27 +486,29 @@ class AgentFactory:
                         continue
                         
                     return self.agent_client.threads.get(thread_id)
-                # elif self.current_thread:
-                #     logger.info("🚀Using current thread")
-                #     return self.current_thread
                 elif self.current_thread:
                     # Check if we should start a new thread based on run count, token usage, or age
+                    logger.info(f"🚀Checking if a new thread should be created based on run count, token usage, or age")
+                    
                     thread_info = self.agent_client.threads.get(self.current_thread.id)
+                    logger.info(f"🚀 thread_info {thread_info}")
 
                     runs = list(self.agent_client.runs.list(thread_id=self.current_thread.id))
-                    
+                                        
                     # Example: Count runs in this thread
                     run_count = len(runs)
+                    logger.info(f"🚀 run_count:  {run_count}")    
 
                     # Example: Token usage check
                     total_tokens = sum(
                         (r.usage.prompt_tokens or 0) + (r.usage.completion_tokens or 0)
                         for r in runs
                     )
+                    logger.info(f"🚀 total_tokens:  {total_tokens}")        
 
-                    # Example: Age check
-                    #thread_age = datetime.now() - thread_info.created_at
+                    #Age check
                     thread_age = datetime.now(timezone.utc) - thread_info.created_at
+                    logger.info(f"🚀 thread_age  {thread_age} and is greater than 1 hour:  {thread_age > timedelta(hours=1)}")  
 
                     if run_count >= 20 or total_tokens > 45000 or thread_age > timedelta(hours=1):
                         logger.info("🚀Starting new thread due to limit reached")
@@ -497,11 +516,11 @@ class AgentFactory:
                         self.current_thread = thread
                         return thread
 
-                    logger.info("🚀Using existing thread")
+                    logger.info("🚀No of the conditions met to start new thread, will continue using existing thread.")
                     return self.current_thread
 
                 else:
-                    logger.info("🚀Creating new thread")
+                    logger.info("🚀Existing thread not found, creating new thread")
                     thread = self.agent_client.threads.create()
                     self.current_thread = thread
                     return thread
@@ -512,24 +531,31 @@ class AgentFactory:
 
 
     def _send_message_with_retry(self, thread_id: str, role: str, content: str, max_retries: int):
+        logger.info(f"🚀Inside _send_message_with_retry")
         logger.info(f"🚀Sending {role} message to thread {thread_id}")
+
         for attempt in range(max_retries):
+            logger.info(f"🚀attempt {attempt} to create message")
             try:
                 self.agent_client.messages.create(
                     thread_id=thread_id,
                     role=role,
                     content=content
                 )
+                logger.info(f"🚀attempt {attempt} to create message was successful")
                 return
             except Exception as e:
+                logger.info(f"🚀Exception in attempt {attempt} to create message")
                 if "active run" in str(e):
                     if attempt < max_retries - 1:
                         # Wait for any active runs to complete
+                        logger.info(f"🚀getting the list of active runs")
                         active_runs = list(self.agent_client.runs.list(
                             thread_id=thread_id,
                             status=["in_progress", "queued", "requires_action"]
                         ))
                         if active_runs:
+                            logger.info(f"🚀Waiting for active run to complete")
                             self._wait_for_run_completion(thread_id, active_runs[0].id)
                         time.sleep(1 * (attempt + 1))
                         continue
