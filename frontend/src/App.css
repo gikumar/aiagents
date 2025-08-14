@@ -50,8 +50,8 @@ body {
 .app-container {
   display: flex;
   height: 100vh;
-  width: 100vw;
-  max-width: 1800px;
+  width: 99%;
+  max-width: 100%;
   background-color: var(--color-bg);
   border-radius: 20px;
   box-shadow: 0 15px 40px var(--color-shadow);
@@ -384,18 +384,20 @@ body {
 .chat-message-row {
   display: flex;
   margin-bottom: 15px;
-  justify-content: flex-start;
 }
 
 .user-message-row {
   justify-content: flex-end;
 }
 
+.agent-message-row {
+  justify-content: flex-start;
+}
+
 .message-content-wrapper {
   display: flex;
-  align-items: flex-start;
-  max-width: 85%;
-  width: 100%;
+  max-width: 70%;
+  width: 70%;
 }
 
 .user-message-wrapper {
@@ -443,8 +445,11 @@ body {
   box-shadow: 0 3px 10px var(--color-shadow);
   text-decoration: none !important;
   position: relative;
-  max-width: 100%;
+  width: auto; /* Ensures it adjusts to content or max-width */
   transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  max-width: 90%; 
+  flex-grow: 1; /* Add this to allow it to expand */
+  flex-basis: 0; /* Ensures it starts with no initial size */
 }
 
 .message-bubble:hover {
@@ -464,6 +469,9 @@ body {
   color: var(--color-text);
   border-bottom-left-radius: 6px;
   border: 1px solid var(--color-border);
+  margin-right: 0; /* Remove any explicit right margin if present */
+  margin-left: 0; /* Remove any explicit left margin if present */
+  flex-grow: 1; /* Allow it to grow */
 }
 
 .user-message-bubble {
@@ -471,6 +479,9 @@ body {
   color: white;
   border-bottom-right-radius: 6px;
   box-shadow: 0 3px 10px rgba(76, 175, 80, 0.3);
+  margin-right: 0; /* Remove any explicit right margin if present */
+  margin-left: 0; /* Remove any explicit left margin if present */
+  flex-grow: 1; /* Allow it to grow */
 }
 
 .user-message-bubble p {
@@ -525,7 +536,7 @@ body {
 
 /* ===== GRAPH CONTAINERS ===== */
 .chart-container {
-  width: 100%;
+  width: 100%; /* This is already set correctly */
   height: 300px; /* Reduced height for better fit */
   min-height: 200px;
   background: var(--agent-bubble-bg);
