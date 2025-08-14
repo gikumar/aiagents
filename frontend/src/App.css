@@ -49,9 +49,9 @@ body {
 /* ===== APP CONTAINER ===== */
 .app-container {
   display: flex;
-  height: 95vh;
-  width: 95vw;
-  max-width: 1600px;
+  height: 100vh;
+  width: 100vw;
+  max-width: 1800px;
   background-color: var(--color-bg);
   border-radius: 20px;
   box-shadow: 0 15px 40px var(--color-shadow);
