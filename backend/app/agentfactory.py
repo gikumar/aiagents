@@ -27,6 +27,7 @@ import zlib
 import base64
 from typing import Optional, Any, Dict
 from app.utility.thread_cleanup_scheduler import register_agent_instance
+from datetime import datetime, timedelta, timezone
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -468,9 +469,37 @@ class AgentFactory:
                         continue
                         
                     return self.agent_client.threads.get(thread_id)
+                # elif self.current_thread:
+                #     logger.info("🚀Using current thread")
+                #     return self.current_thread
                 elif self.current_thread:
-                    logger.info("🚀Using current thread")
+                    # Check if we should start a new thread based on run count, token usage, or age
+                    thread_info = self.agent_client.threads.get(self.current_thread.id)
+
+                    runs = list(self.agent_client.runs.list(thread_id=self.current_thread.id))
+                    
+                    # Example: Count runs in this thread
+                    run_count = len(runs)
+
+                    # Example: Token usage check
+                    total_tokens = sum(
+                        (r.usage.prompt_tokens or 0) + (r.usage.completion_tokens or 0)
+                        for r in runs
+                    )
+
+                    # Example: Age check
+                    #thread_age = datetime.now() - thread_info.created_at
+                    thread_age = datetime.now(timezone.utc) - thread_info.created_at
+
+                    if run_count >= 20 or total_tokens > 45000 or thread_age > timedelta(hours=1):
+                        logger.info("🚀Starting new thread due to limit reached")
+                        thread = self.agent_client.threads.create()
+                        self.current_thread = thread
+                        return thread
+
+                    logger.info("🚀Using existing thread")
                     return self.current_thread
+
                 else:
                     logger.info("🚀Creating new thread")
                     thread = self.agent_client.threads.create()
@@ -480,6 +509,7 @@ class AgentFactory:
                 if attempt == max_retries - 1:
                     raise
                 time.sleep(1 * (attempt + 1))
+
 
     def _send_message_with_retry(self, thread_id: str, role: str, content: str, max_retries: int):
         logger.info(f"🚀Sending {role} message to thread {thread_id}")
