@@ -61,6 +61,8 @@ Identify the column or metric requested (e.g., ltd_realized_value).
 Search for the column in each table schema.
 If the column is not found, look for related columns or metrics that could provide similar insights.
 If no relevant data is found, inform the user about the limitation and suggest alternative queries or metrics.
+25. To identify columns relevant for regulatory identification, look for fields that typically align with compliance requirements, such as deal identifiers, portfolio IDs, trader information, option statuses, and other metadata that could be used for tracking and reporting purposes.
+and based on identified columns relevant for regulatory identification, answer the prompt.
 """
 
 agent_behavior_instructions = {

@@ -16,7 +16,7 @@ AGENT_CLASSES = [
 ]
 
 KEEP_LAST_N_THREADS = 5
-CLEANUP_INTERVAL_MINUTES = 15
+CLEANUP_INTERVAL_MINUTES = 70
 
 # -----------------------------------------------------------------------------
 # Logging setup
