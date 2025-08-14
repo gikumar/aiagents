@@ -71,7 +71,7 @@ const SettingsIcon = () => (
 );
 
 const ChevronLeftIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" className="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+  <svg xmlns="http://www.w3.org/2000/svg" className="chevron-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
     <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
   </svg>
 );
@@ -139,6 +139,11 @@ const ThemeToggle = ({ theme, toggleTheme }) => {
       </button>
     </div>
   );
+};
+
+ThemeToggle.propTypes = {
+  theme: PropTypes.string.isRequired,
+  toggleTheme: PropTypes.func.isRequired,
 };
 
 const MemoizedChartComponent = memo(({ chartData }) => {
@@ -239,11 +244,11 @@ const ChatInput = memo(({ prompt, setPrompt, handleSubmit, loading, uploadedFile
         </button>
       </div>
       {uploadedFile && (
-        <div className="file-attachment-info">
+        <div className="file-context-display">
           {uploadedFile.isLoading ? (
             <FileLoadingIndicator />
           ) : (
-            <>
+            <div className="file-name-tag">
               <span>{uploadedFile.name}</span>
               <button
                 type="button"
@@ -254,7 +259,7 @@ const ChatInput = memo(({ prompt, setPrompt, handleSubmit, loading, uploadedFile
               >
                 <XCircleIcon />
               </button>
-            </>
+            </div>
           )}
         </div>
       )}
@@ -414,8 +419,8 @@ const ChatWindow = () => {
     }
   }, []);
 
-  // Robust graph data validation
-  const validateGraphData = (data) => {
+  // Memoized graph data validation
+  const validateGraphData = useCallback((data) => {
     if (!data) {
       log.debug("Graph data is null/undefined");
       return false;
@@ -450,14 +455,14 @@ const ChatWindow = () => {
     }
 
     return true;
-  };
+  }, []);
 
-  // Enhanced graph data extraction with multiple fallbacks
-  const extractGraphData = (response) => {
+  // Memoized graph data extraction with multiple fallbacks
+  const extractGraphData = useCallback((response) => {
     log.debug("Attempting to extract graph data from response");
 
     // Case 1: Response is already a graph data object
-    if (response && typeof response === 'object' && response.graph_data) {
+    if (response && typeof response === 'object' && validateGraphData(response.graph_data)) {
       log.debug("Found graph_data in response object");
       return response.graph_data;
     }
@@ -468,11 +473,11 @@ const ChatWindow = () => {
         // Try parsing as pure JSON first
         try {
           const parsed = JSON.parse(response);
-          if (parsed.graph_data) {
+          if (validateGraphData(parsed.graph_data)) {
             log.debug("Found graph_data in parsed JSON");
             return parsed.graph_data;
           }
-          if (parsed.graphData) { // Handle camelCase variation
+          if (validateGraphData(parsed.graphData)) { // Handle camelCase variation
             log.debug("Found graphData in parsed JSON");
             return parsed.graphData;
           }
@@ -490,11 +495,11 @@ const ChatWindow = () => {
             log.debug("Extracted potential JSON:", jsonStr.slice(0, 100) + (jsonStr.length > 100 ? "..." : ""));
 
             const parsedData = JSON.parse(jsonStr);
-            if (parsedData.graph_data) {
+            if (validateGraphData(parsedData.graph_data)) {
               log.debug("Found graph_data in embedded JSON");
               return parsedData.graph_data;
             }
-            if (parsedData.graphData) { // Handle camelCase variation
+            if (validateGraphData(parsedData.graphData)) { // Handle camelCase variation
               log.debug("Found graphData in embedded JSON");
               return parsedData.graphData;
             }
@@ -509,9 +514,10 @@ const ChatWindow = () => {
         if (match) {
           try {
             const parsed = JSON.parse(match[1]);
-            if (parsed.graph_data || parsed.graphData) {
+            const graphData = parsed.graph_data || parsed.graphData;
+            if (validateGraphData(graphData)) {
               log.debug("Found graph data in markdown code block");
-              return parsed.graph_data || parsed.graphData;
+              return graphData;
             }
           } catch (e) {
             log.debug("Failed to parse code block JSON:", e.message);
@@ -524,7 +530,7 @@ const ChatWindow = () => {
 
     log.debug("No valid graph data found in response");
     return null;
-  };
+  }, [validateGraphData]);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -597,8 +603,10 @@ const ChatWindow = () => {
 
   // Add/remove resize event listeners
   useEffect(() => {
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
+    if (isResizing) {
+      window.addEventListener("mousemove", onMouseMove);
+      window.addEventListener("mouseup", onMouseUp);
+    }
     return () => {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
@@ -645,6 +653,10 @@ const ChatWindow = () => {
       if (g.data && g.options) return g;
 
       // expected "simple" shape: { type, labels, values, title?, dataset_label? }
+      if (!validateGraphData(g)) {
+        log.error("Invalid graph data passed to toChartJSConfig", g);
+        return null;
+      }
       const type = ['bar', 'line', 'pie'].includes(g.type) ? g.type : 'bar';
       const labels = Array.isArray(g.labels) ? g.labels : [];
       const values = Array.isArray(g.values) ? g.values : [];
@@ -733,7 +745,7 @@ const ChatWindow = () => {
 
       // normalize any graph payload to Chart.js config
       let graphData = res.data.graph_data || extractGraphData(res.data.response);
-      if (graphData) {
+      if (graphData && validateGraphData(graphData)) {
         const normalized = toChartJSConfig(graphData);
         if (normalized) {
           agentResponse.type = "graph";
@@ -741,7 +753,10 @@ const ChatWindow = () => {
         } else {
           log.warn("Graph data found but could not be normalized", graphData);
         }
+      } else if (graphData) {
+        log.warn("Graph data found but failed validation", graphData);
       }
+
 
       setMessages((prev) => [...prev, agentResponse]);
       setCurrentThreadId(res.data.thread_id);
@@ -764,7 +779,7 @@ const ChatWindow = () => {
       setUploadedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
-  }, [messages, uploadedFile, currentThreadId, agentBehavior, theme]);
+  }, [currentThreadId, agentBehavior, theme, validateGraphData, extractGraphData]);
 
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
@@ -778,7 +793,7 @@ const ChatWindow = () => {
       sender: "user",
       text: prompt.trim(),
       ...(uploadedFile && {
-        file_name: uploadedFile.name,           // fixed: was fileName
+        file_name: uploadedFile.name,
         file_content: uploadedFile.content,
       }),
     };
@@ -964,6 +979,8 @@ const ChatWindow = () => {
             </button>
           </div>
         </div>
+        
+        
 
         {!isSidebarHidden && (
           <div className="sidebar-resizer" onMouseDown={onMouseDown}></div>
@@ -972,12 +989,11 @@ const ChatWindow = () => {
 
       {/* Sidebar Toggle Button */}
       <button
-        className={`sidebar-toggle-button ${isSidebarHidden ? "rotated" : ""}`}
+        className={`sidebar-toggle-button ${isSidebarHidden ? "hidden" : ""}`}
         onClick={toggleSidebar}
         title={isSidebarHidden ? "Show Sidebar" : "Hide Sidebar"}
         aria-label={isSidebarHidden ? "Show sidebar" : "Hide sidebar"}
         aria-expanded={!isSidebarHidden}
-        style={{ left: isSidebarHidden ? "0px" : `${sidebarWidth}px` }}
       >
         <ChevronLeftIcon />
       </button>

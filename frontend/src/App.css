@@ -280,6 +280,11 @@ body {
 .sidebar-toggle-button {
   position: absolute;
   bottom: 30px;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  left: var(--sidebar-width, 350px);
   transform: translateX(-50%);
   background-color: var(--color-primary);
   color: white;
@@ -293,32 +298,32 @@ body {
   cursor: pointer;
   box-shadow: 0 2px 5px var(--color-shadow);
   z-index: 20;
-  transition: all 0.3s ease;
+  transition: all 0.3s ease, left 0.3s ease-in-out;
 }
 
-.sidebar-toggle-button:not(.rotated) {
-  left: var(--sidebar-width, 350px);
+.sidebar-toggle-button.hidden {
+  left: 0;
 }
 
-.sidebar-toggle-button.rotated {
-  transform: translateX(-50%) rotate(180deg);
+.sidebar-toggle-button.hidden .chevron-icon {
+  transform: rotate(180deg);
 }
 
 .sidebar-toggle-button:hover {
   background-color: var(--color-primary-dark);
-  transform: translateY(-1px) scale(1.05);
+  transform: translateX(-50%) translateY(-1px) scale(1.05);
+  box-shadow: 0 4px 8px var(--color-shadow);
 }
 
-.sidebar-toggle-button:hover,
-.sidebar-toggle-button.rotated:hover {
-  background-color: var(--color-primary-dark);
-  transform: scale(1.05);
+.sidebar-toggle-button.hidden:hover {
+  transform: translateX(-50%) translateY(-1px) scale(1.05) rotate(180deg);
 }
 
-.sidebar-toggle-button .icon {
+.chevron-icon {
   width: 15px;
   height: 15px;
   color: white;
+  transition: transform 0.3s ease;
 }
 
 /* ===== MAIN CHAT AREA ===== */
