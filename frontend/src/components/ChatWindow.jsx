@@ -336,6 +336,11 @@ const ChatMessage = memo(({ message, messageLayout, onCopy, onRetry }) => {
                 {typeof message.text === "string" ? message.text : JSON.stringify(message.text)}
               </ReactMarkdown>
             )}
+            {message.threadId && (
+              <div className="token-info-small">
+                <span>Thread ID: {message.threadId}</span>
+              </div>
+            )}
             {message.tokens && (
               <div className="token-info-small">
                 <span>Tokens: {message.tokens.input} in / {message.tokens.output} out</span>
