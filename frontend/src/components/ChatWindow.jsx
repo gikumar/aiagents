@@ -679,7 +679,8 @@ const ChatWindow = () => {
             color: theme === 'dark' ? '#E0E0E0' : '#212529'
           },
           legend: {
-            labels: { color: theme === 'dark' ? '#E0E0E0' : '#212529' }
+            labels: { color: theme === 'dark' ? '#E0E0E0' : '#212529' },
+            position: 'bottom'
           }
         },
         scales: (type === 'pie') ? undefined : {
