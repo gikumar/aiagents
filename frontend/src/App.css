@@ -173,6 +173,46 @@ body {
   border-color: var(--color-primary-dark);
 }
 
+/* ===== THEME TOGGLE OPTIONS ===== */
+.theme-toggle-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.theme-toggle-option {
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-bg-secondary);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.9em;
+}
+
+.theme-toggle-option:hover {
+  background-color: var(--color-bg);
+  border-color: var(--color-primary);
+}
+
+.theme-toggle-option.active {
+  background-color: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary-dark);
+}
+
+/* This replaces the old .theme-toggle button styling */
+.theme-toggle-option svg {
+  width: 20px;
+  height: 20px;
+  color: var(--color-text-secondary);
+}
+
+.theme-toggle-option.active svg {
+  color: white;
+}
 /* ===== FILE UPLOAD ===== */
 .file-upload-section .drag-drop-area {
   border: 2px dashed var(--color-primary);
@@ -239,6 +279,13 @@ body {
   margin-bottom: 15px;
 }
 
+.token-info-small {
+  text-align: right;
+  margin-top: 5px; /* Add some space above */
+  font-size: 0.85em; /* Make it slightly smaller */
+  color: var(--color-text-secondary); /* Use a secondary text color */
+}
+
 .token-usage-header h3 {
   font-size: 1.1em;
   margin: 0;
@@ -259,45 +306,6 @@ body {
   color: var(--color-primary);
 }
 
-/* ===== THEME TOGGLE BUTTON ===== */
-.theme-toggle {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 25px;
-}
-
-.theme-toggle button {
-  background-color: var(--color-bg-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  color: var(--color-text-secondary);
-}
-
-.theme-toggle button:hover {
-  background-color: var(--color-bg);
-}
-
-.theme-toggle button.active {
-  background-color: var(--color-primary);
-  border-color: var(--color-primary-dark);
-  color: white;
-}
-
-.theme-toggle button svg {
-  width: 20px;
-  height: 20px;
-}
-
-.theme-toggle button.active svg {
-  color: white;
-}
-
 /* ===== SIDEBAR RESIZER ===== */
 .sidebar-resizer {
   width: 8px;
@@ -314,6 +322,7 @@ body {
 .sidebar-resizer:hover {
   background-color: rgba(0, 0, 0, 0.05);
 }
+
 
 /* ===== SIDEBAR TOGGLE BUTTON ===== */
 .sidebar-toggle-button {
@@ -389,7 +398,7 @@ body {
   font-size: 2.0em;
   font-weight: 800;
   color: var(--color-text);
-  margin: 0 0 15px;
+  margin: 0;
   letter-spacing: -1px;
   transition: color 0.3s ease;
 }
@@ -458,15 +467,9 @@ body {
 }
 
 .agent-avatar {
-  background-color: var(--color-bg-secondary);
+  background-color: var(--color-primary);
   color: var(--color-text-secondary);
   margin-right: 10px;
-}
-
-.agent-avatar .icon {
-  width: 20px;
-  height: 20px;
-  color: var(--color-text-secondary);
 }
 
 /* ===== MESSAGE BUBBLES ===== */
@@ -722,30 +725,45 @@ body {
 }
 
 .send-button {
-  background: none;
+  background: var(--user-bubble-bg);
+  color: white;
   border: none;
-  cursor: pointer;
-  padding: 8px;
+  border-radius: 12px;
+  width: 48px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--color-text-secondary);
-  transition: color 0.2s ease;
-  align-self: flex-end;
-  margin-bottom: 5px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.25);
+  flex-shrink: 0;
 }
 
-.send-button-active {
-  color: var(--color-primary);
+.send-button:hover {
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 6px 16px rgba(76, 175, 80, 0.3);
 }
 
-.send-button-disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.send-button .icon-small {
+  transition: transform 0.3s ease;
+}
+
+.send-button:hover .icon-small {
+  transform: translateX(2px);
 }
 
 .send-button-active:hover {
-  color: var(--color-primary-dark);
+  background-color: var(--color-primary-dark);
+  transform: translateY(-1px);
+  box-shadow: 0 5px 10px rgba(102, 187, 106, 0.4);
+}
+
+.send-button-disabled {
+  background-color: var(--color-border);
+  cursor: not-allowed;
+  opacity: 0.6;
+  box-shadow: none;
 }
 
 /* ===== SCROLL TO TOP BUTTON ===== */

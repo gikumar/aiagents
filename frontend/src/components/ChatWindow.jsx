@@ -70,6 +70,8 @@ const SettingsIcon = () => (
   </svg>
 );
 
+
+
 const ChevronLeftIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" className="chevron-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
     <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
@@ -122,17 +124,17 @@ const RetryIcon = () => (
 
 const ThemeToggle = ({ theme, toggleTheme }) => {
   return (
-    <div className="theme-toggle">
+    <div className="theme-toggle-options">
       <button
         onClick={() => toggleTheme('light')}
-        className={theme === 'light' ? 'active' : ''}
+        className={`theme-toggle-option ${theme === 'light' ? 'active' : ''}`}
         aria-label="Light theme"
       >
         <LightThemeIcon />
       </button>
       <button
         onClick={() => toggleTheme('dark')}
-        className={theme === 'dark' ? 'active' : ''}
+        className={`theme-toggle-option ${theme === 'dark' ? 'active' : ''}`}
         aria-label="Dark theme"
       >
         <DarkThemeIcon />
@@ -899,11 +901,18 @@ const ChatWindow = () => {
         className={`sidebar ${isSidebarHidden ? "hidden" : ""}`}
         style={{ width: isSidebarHidden ? "0px" : `${sidebarWidth}px` }}
       >
+        
         <div className="agent-settings-header">
           <SettingsIcon />
           <h2>Agent Settings</h2>
         </div>
 
+        {/* New Theme Toggle Section */}
+        <div className="settings-section">
+          <label className="settings-label">Theme</label>
+          <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
+        </div>
+        
         <div className="settings-section">
           <label className="settings-label">Current Thread ID:</label>
           <input
@@ -1002,10 +1011,12 @@ const ChatWindow = () => {
       {/* Main Chat Area */}
       <div className="main-chat-area">
         <div className="main-chat-header">
-          <h3 className="welcome-title">E&amp;C - Interactive Agent</h3>
+          <h2 className="welcome-title">E&amp;C - Interactive Agent</h2>
           <p className="welcome-subtitle">AI-powered agent for front, middle and back offices</p>
-          <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
         </div>
+        
+        
+
 
         <div
           className="chat-messages"
