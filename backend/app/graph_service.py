@@ -270,7 +270,7 @@ class GraphService:
                         "labels": deals,
                         "values": values,
                         "dataset_label": "LTD Realized PnL",
-                        "title": "Top Deals by LTD Realized PnL"
+                        "title": "Generated Graph"
                         }
                   }
             raise ValueError("Could not extract data from prompt")
