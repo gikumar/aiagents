@@ -1,12 +1,13 @@
 // src/App.js
 import React from 'react';
+import './App.css';
 import ChatWindow from './components/ChatWindow';
-import './App.css'; // This line correctly imports the CSS file
 
 function App() {
+
   return (
     <div className="App">
-      <ChatWindow />
+          <ChatWindow />
     </div>
   );
 }
