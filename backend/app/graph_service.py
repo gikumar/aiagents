@@ -104,7 +104,7 @@ class GraphService:
                     "labels": labels,
                     "values": values,
                     "dataset_label": dataset_label,
-                    "title": f"Top {len(values)} Deals by Realized Value"
+                    "title": f"Generated graph"
                 }
             }
             

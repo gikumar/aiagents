@@ -83,7 +83,7 @@ class AgentFactory:
         self.active_runs = {}
         self.last_request_time = {}
         self.last_cleanup = datetime.now()
-        self.cleanup_interval = timedelta(minutes=10)
+        self.cleanup_interval = timedelta(minutes=30)
         self.thread_lock = threading.Lock()
         register_agent_instance("OrchestratorAgent", self)
         logger.info("🚀AgentFactory initialized successfully")
@@ -232,6 +232,17 @@ class AgentFactory:
                     logger.info("🚀Thread is busy with existing run")
                     return thread
                 
+                # Check for active runs and wait for them to finish before proceeding
+                if thread_id:
+                    active_runs = list(self.agent_client.runs.list(
+                        thread_id=thread_id,
+                        status=["in_progress", "queued", "requires_action"]
+                    ))
+                    if active_runs:
+                        logger.info(f"🚀Found active runs on thread {thread_id}. Waiting for completion.")
+                        for run in active_runs:
+                            self._wait_for_run_completion(thread_id, run.id)
+
                 behavior_instruction = agent_behavior_instructions.get(agent_mode, "")
                 full_instruction = f"""
                     [Orchestrator Instructions]
@@ -458,21 +469,14 @@ class AgentFactory:
                     ))
                     
                     if active_runs:
-                        logger.info(f"🚀Active runs found: {[r.id for r in active_runs]}")
+                        logger.info(f"🚀Active runs found: {[r.id for r in active_runs]}. Thread is busy.")
+                        # Return an AgentResponse to signal the thread is busy
+                        return AgentResponse(
+                            response="Please wait while I finish processing your previous request.",
+                            thread_id=thread_id,
+                            is_error=False
+                        )
                         
-                        # Wait for existing runs to complete
-                        for run in active_runs:
-                            if not self._wait_for_run_completion(thread_id, run.id):
-                                logger.info(f"🚀 Waiting for existing runs to complete for thread {thread_id} and run_id {run.id}")
-                                if attempt == max_retries - 1:
-                                    logger.info(f"🚀 Waited for {max_retries} times for runs to complete but still not completed for thread {thread_id} and run_id {run.id}")
-                                    return AgentResponse(
-                                        response="Please wait while I finish processing your previous request.",
-                                        thread_id=thread_id,
-                                        is_error=False
-                                    )
-                                continue
-                    
                     # Additional check to ensure no pending messages
                     messages = list(self.agent_client.messages.list(thread_id=thread_id))
                     if messages and messages[-1].role == "user" and not messages[-1].completed:
