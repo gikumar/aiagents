@@ -43,6 +43,14 @@ ChartJS.register(
     Legend
 );
 
+// Configure global Chart.js defaults for better color handling
+ChartJS.defaults.color = "#666";
+ChartJS.defaults.borderColor = "rgba(0, 0, 0, 0.1)";
+ChartJS.defaults.plugins.legend.display = true;
+ChartJS.defaults.plugins.legend.position = "top";
+ChartJS.defaults.responsive = true;
+ChartJS.defaults.maintainAspectRatio = false;
+
 // --- SVG Icons ---
 const UserAvatar = () => (
     <div className="avatar user-avatar">
@@ -94,6 +102,16 @@ const ChatMessages = React.memo(function ChatMessages({
                 </div>
             );
         }
+
+        log.debug("ChartComponent received data:", {
+            type: chartData.type,
+            hasData: !!chartData.data,
+            hasOptions: !!chartData.options,
+            dataKeys: Object.keys(chartData.data || {}),
+            datasetKeys: chartData.data?.datasets?.[0]
+                ? Object.keys(chartData.data.datasets[0])
+                : [],
+        });
 
         try {
             return (
@@ -171,6 +189,24 @@ const ChatMessages = React.memo(function ChatMessages({
             return false;
         }
 
+        // Additional validation for values
+        if (
+            data.values.some(
+                (v) => v === null || v === undefined || isNaN(Number(v))
+            )
+        ) {
+            log.debug("Some values are invalid:", data.values);
+            return false;
+        }
+
+        log.debug("Graph data validation passed:", {
+            type: data.type,
+            labelsCount: data.labels.length,
+            valuesCount: data.values.length,
+            sampleLabels: data.labels.slice(0, 3),
+            sampleValues: data.values.slice(0, 3),
+        });
+
         return true;
     };
 
@@ -235,7 +271,65 @@ const ChatMessages = React.memo(function ChatMessages({
             );
         }
 
-        // Prepare chart data with theme-aware colors
+        // Define color palettes for different themes
+        const colorPalettes = {
+            light: [
+                "rgba(25, 118, 210, 0.7)", // Blue
+                "rgba(245, 124, 0, 0.7)", // Orange
+                "rgba(76, 175, 80, 0.7)", // Green
+                "rgba(233, 30, 99, 0.7)", // Pink
+                "rgba(156, 39, 176, 0.7)", // Purple
+                "rgba(255, 193, 7, 0.7)", // Amber
+                "rgba(121, 85, 72, 0.7)", // Brown
+                "rgba(158, 158, 158, 0.7)", // Gray
+                "rgba(244, 67, 54, 0.7)", // Red
+                "rgba(0, 150, 136, 0.7)", // Teal
+            ],
+            dark: [
+                "rgba(100, 181, 246, 0.7)", // Light Blue
+                "rgba(255, 167, 38, 0.7)", // Light Orange
+                "rgba(129, 199, 132, 0.7)", // Light Green
+                "rgba(240, 98, 146, 0.7)", // Light Pink
+                "rgba(186, 104, 200, 0.7)", // Light Purple
+                "rgba(255, 213, 79, 0.7)", // Light Amber
+                "rgba(161, 136, 127, 0.7)", // Light Brown
+                "rgba(189, 189, 189, 0.7)", // Light Gray
+                "rgba(239, 154, 154, 0.7)", // Light Red
+                "rgba(77, 208, 225, 0.7)", // Light Teal
+            ],
+        };
+
+        // Get the appropriate color palette for the current theme
+        const palette = colorPalettes[theme] || colorPalettes.light;
+
+        // Generate colors for each data point
+        let backgroundColors = graphData.values.map(
+            (_, index) => palette[index % palette.length]
+        );
+        let borderColors = graphData.values.map((_, index) =>
+            palette[index % palette.length].replace("0.7", "1")
+        );
+
+        // For pie charts, we need to handle colors differently
+        if (graphData.type === "pie") {
+            // Pie charts need colors for each slice
+            const pieColors = graphData.values.map(
+                (_, index) => palette[index % palette.length]
+            );
+            backgroundColors = pieColors;
+            borderColors = pieColors.map((color) => color.replace("0.7", "1"));
+        }
+
+        log.debug(
+            `Generated colors for ${graphData.values.length} data points:`,
+            {
+                backgroundColors: backgroundColors.slice(0, 5), // Log first 5 colors
+                paletteLength: palette.length,
+                theme: theme,
+            }
+        );
+
+        // Prepare chart data with theme-aware colors and multiple datasets
         const chartData = {
             type: graphData.type || "bar",
             data: {
@@ -244,30 +338,46 @@ const ChatMessages = React.memo(function ChatMessages({
                     {
                         label: graphData.dataset_label || "Deals Data",
                         data: graphData.values || [],
-                        backgroundColor:
-                            theme === "dark"
-                                ? "rgba(100, 181, 246, 0.7)" // light blue
-                                : "rgba(25, 118, 210, 0.7)", // corporate blue
-                        borderColor:
-                            theme === "dark"
-                                ? "rgba(100, 181, 246, 1)"
-                                : "rgba(25, 118, 210, 1)",
+                        backgroundColor: backgroundColors,
+                        borderColor: borderColors,
                         borderWidth: 1,
                     },
                 ],
             },
             options: {
                 responsive: true,
+                maintainAspectRatio: false,
                 plugins: {
                     title: {
                         display: true,
                         text: graphData.title || "Deals Analysis",
                         color: theme === "dark" ? "#E0E0E0" : "#212529",
+                        font: {
+                            size: 16,
+                            weight: "bold",
+                        },
                     },
                     legend: {
+                        display: true,
+                        position: "top",
                         labels: {
                             color: theme === "dark" ? "#E0E0E0" : "#212529",
+                            usePointStyle: true,
+                            padding: 20,
                         },
+                    },
+                    tooltip: {
+                        backgroundColor:
+                            theme === "dark"
+                                ? "rgba(0, 0, 0, 0.8)"
+                                : "rgba(255, 255, 255, 0.9)",
+                        titleColor: theme === "dark" ? "#E0E0E0" : "#212529",
+                        bodyColor: theme === "dark" ? "#E0E0E0" : "#212529",
+                        borderColor:
+                            theme === "dark"
+                                ? "rgba(255, 255, 255, 0.2)"
+                                : "rgba(0, 0, 0, 0.2)",
+                        borderWidth: 1,
                     },
                 },
                 scales: {
@@ -295,8 +405,34 @@ const ChatMessages = React.memo(function ChatMessages({
                         },
                     },
                 },
+                elements: {
+                    bar: {
+                        borderRadius: 4,
+                        borderSkipped: false,
+                    },
+                    point: {
+                        radius: 4,
+                        hoverRadius: 6,
+                    },
+                },
+                animation: {
+                    duration: 1000,
+                    easing: "easeInOutQuart",
+                },
+                interaction: {
+                    intersect: false,
+                    mode: "index",
+                },
             },
         };
+
+        log.debug("Final chart data structure:", {
+            type: chartData.type,
+            labels: chartData.data.labels,
+            values: chartData.data.datasets[0].data,
+            colors: chartData.data.datasets[0].backgroundColor,
+            options: chartData.options,
+        });
 
         return (
             <div
@@ -304,6 +440,18 @@ const ChatMessages = React.memo(function ChatMessages({
                 style={{
                     height: "400px",
                     width: "100%",
+                    position: "relative",
+                    backgroundColor:
+                        theme === "dark"
+                            ? "rgba(255, 255, 255, 0.02)"
+                            : "rgba(0, 0, 0, 0.02)",
+                    borderRadius: "8px",
+                    padding: "16px",
+                    border: `1px solid ${
+                        theme === "dark"
+                            ? "rgba(255, 255, 255, 0.1)"
+                            : "rgba(0, 0, 0, 0.1)"
+                    }`,
                 }}
             >
                 <ChartComponent chartData={chartData} />
@@ -413,6 +561,12 @@ const ChatMessages = React.memo(function ChatMessages({
                                         : JSON.stringify(msg.text)}
                                 </ReactMarkdown>
                             )}
+                            {msg.threadId && (
+                                <div className="token-info-small">
+                                    <span>Thread ID: {msg.threadId}</span>
+                                </div>
+                            )}
+
                             {msg.tokens && (
                                 <div className="token-info-small">
                                     <span>
