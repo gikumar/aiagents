@@ -104,7 +104,7 @@ class GraphService:
                     "labels": labels,
                     "values": values,
                     "dataset_label": dataset_label,
-                    "title": f"Top {len(values)} Deals by Realized Value"
+                    "title": f"Requested Graph"
                 }
             }
             
@@ -181,7 +181,7 @@ class GraphService:
                         "labels": labels,
                         "values": values,
                         "dataset_label": "Realized PnL (in billions)",
-                        "title": "Top Deals by Realized PnL"
+                        "title": "Generated Graph"
                   }
                   }
       except Exception as e:
@@ -269,7 +269,7 @@ class GraphService:
                         "type": "bar",
                         "labels": deals,
                         "values": values,
-                        "dataset_label": "LTD Realized PnL",
+                        "dataset_label": "",
                         "title": "Generated Graph"
                         }
                   }
