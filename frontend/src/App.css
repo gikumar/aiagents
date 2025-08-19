@@ -460,6 +460,7 @@ body {
 }
 
 .agent-message-bubble {
+  padding-right: 50px;
   background-color: var(--agent-bubble-bg);
   color: var(--color-text);
   border-bottom-left-radius: 6px;
