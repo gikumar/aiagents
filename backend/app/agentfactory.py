@@ -212,7 +212,7 @@ class AgentFactory:
         file_content: Optional[str] = None,
         chat_history: Optional[list] = None,
         thread_id: Optional[str] = None,
-        max_retries: int = 3
+        max_retries: int = 4
     ) -> AgentResponse:
         logger.info(f"🚀Inside process_request2")
         logger.info(f"🚀Processing request with mode: {agent_mode}")
