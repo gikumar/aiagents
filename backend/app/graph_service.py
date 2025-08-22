@@ -90,9 +90,10 @@ class GraphService:
             
             labels = df[label_col].astype(str).tolist()
             values = pd.to_numeric(df[value_col], errors='coerce').fillna(0).tolist()
-            logger.info(f"🚀Generated {len(labels)} labels and {len(values)} values")
+            logger.info(f"🚀Generated {chart_type} chart {len(labels)} labels and {len(values)} values")
             
-            dataset_label = f"Top {len(values)} by Realized Value"
+            #dataset_label = f"Generated {chart_type} Top {len(values)} by Realized Value"
+            dataset_label = f"Generated {chart_type}"
             if value_col != "realized_value":
                 dataset_label = f"Top {len(values)} by {value_col.replace('_', ' ').title()}"
             
@@ -104,7 +105,7 @@ class GraphService:
                     "labels": labels,
                     "values": values,
                     "dataset_label": dataset_label,
-                    "title": f"Top {len(values)} Deals by Realized Value"
+                    "title": f"Requested Graph"
                 }
             }
             
@@ -181,7 +182,7 @@ class GraphService:
                         "labels": labels,
                         "values": values,
                         "dataset_label": "Realized PnL (in billions)",
-                        "title": "Top Deals by Realized PnL"
+                        "title": "Generated Graph"
                   }
                   }
       except Exception as e:
@@ -269,7 +270,7 @@ class GraphService:
                         "type": "bar",
                         "labels": deals,
                         "values": values,
-                        "dataset_label": "LTD Realized PnL",
+                        "dataset_label": "",
                         "title": "Generated Graph"
                         }
                   }

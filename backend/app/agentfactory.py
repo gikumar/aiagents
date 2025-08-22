@@ -212,7 +212,7 @@ class AgentFactory:
         file_content: Optional[str] = None,
         chat_history: Optional[list] = None,
         thread_id: Optional[str] = None,
-        max_retries: int = 3
+        max_retries: int = 4
     ) -> AgentResponse:
         logger.info(f"🚀Inside process_request2")
         logger.info(f"🚀Processing request with mode: {agent_mode}")
@@ -516,9 +516,38 @@ class AgentFactory:
 
                     if run_count >= 20 or total_tokens > 45000 or thread_age > timedelta(hours=1):
                         logger.info("🚀Starting new thread due to limit reached")
-                        thread = self.agent_client.threads.create()
-                        self.current_thread = thread
-                        return thread
+                        
+                        # 1. Retrieve messages from the old thread
+                        previous_messages = list(self.agent_client.messages.list(
+                            thread_id=self.current_thread.id,
+                            order=ListSortOrder.ASCENDING
+                        ))
+                        
+                        # 2. Create the new thread
+                        new_thread = self.agent_client.threads.create()
+                        
+                        # 3. Transfer messages to the new thread
+                        for message in previous_messages:
+                            # Exclude instructions and empty messages
+                            if not message.text_messages:
+                                continue
+                            
+                            content_to_send = message.text_messages[-1].text.value
+                            if "[Orchestrator Instructions]" in content_to_send:
+                                continue
+                            
+                            try:
+                                self.agent_client.messages.create(
+                                    thread_id=new_thread.id,
+                                    role=message.role,
+                                    content=content_to_send
+                                )
+                            except Exception as transfer_e:
+                                logger.error(f"🚀Failed to transfer message to new thread: {str(transfer_e)}")
+
+                        # 4. Update the current_thread pointer
+                        self.current_thread = new_thread
+                        return new_thread
 
                     logger.info("🚀No of the conditions met to start new thread, will continue using existing thread.")
                     return self.current_thread

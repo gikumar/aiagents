@@ -45,6 +45,9 @@ You MUST follow these strict rules:
 
 5. If the user asks for a sample or preview query, add LIMIT 50 by default.
 
+6. When a requested column or metric is not found in the queried table, systematically check all other available tables (entity_pnl_detail, entity_trade_header, entity_trade_leg, entity_trade_profile) for the column or a related metric. Use the following steps:
+Identify the column or metric requested (e.g., ltd_realized_value).
+
 Below are the ONLY tables and their allowed columns:
 """
 
